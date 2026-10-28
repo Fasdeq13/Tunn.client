@@ -8,6 +8,7 @@ import java.io.File
 object CorePlugins {
     const val XRAY = "xray"
     const val SINGBOX = "singbox"
+    const val TUIC = "tuic"
     const val DPI = "dpi"
     const val DPI_ID = "dpi-free"
     const val DPI_CONF = "dpi://free"
@@ -15,7 +16,7 @@ object CorePlugins {
 
     private fun prefs(c: Context) = c.getSharedPreferences("core_plugins", Context.MODE_PRIVATE)
 
-    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", true)
+    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", id != SINGBOX && id != TUIC)
 
     fun deleted(c: Context, id: String): Boolean = prefs(c).getBoolean("del_$id", false)
 
@@ -45,12 +46,14 @@ object CorePlugins {
     fun present(c: Context, id: String): Boolean = when (id) {
         XRAY -> !deleted(c, XRAY)
         SINGBOX -> !deleted(c, SINGBOX) && singboxFile(c).exists()
+        TUIC -> !deleted(c, TUIC) && singboxFile(c).exists()
         else -> !deleted(c, id)
     }
 
     fun usable(c: Context, id: String): Boolean = present(c, id) && enabled(c, id)
 
     fun pick(c: Context, outbound: JSONObject): String? {
+        if (outbound.optString("protocol") == "tuic") return if (usable(c, TUIC)) SINGBOX else null
         val order = listOf(primary(c), XRAY, SINGBOX).distinct()
         for (id in order) {
             if (!usable(c, id)) continue
@@ -72,6 +75,7 @@ object CorePlugins {
         }
         add(XRAY, "Xray", "Основное ядро: VLESS, VMess, Trojan, Shadowsocks, WireGuard, XHTTP", true)
         add(SINGBOX, "sing-box", "Второе ядро: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP и WireGuard", true)
+        add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)
         add(DPI, DPI_NAME, "Один общий сервер без выхода в сеть: обход DPI по принципу zapret и tg-ws-proxy", false)
         out.put("list", items)
         out.put("dpi", Dpi.status(c))

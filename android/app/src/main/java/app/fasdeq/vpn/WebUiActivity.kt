@@ -192,7 +192,7 @@ class WebUiActivity : ComponentActivity() {
                             bridge.pushStats()
                         }
                     }
-                    delay(120)
+                    delay(250)
                 }
             }
         }

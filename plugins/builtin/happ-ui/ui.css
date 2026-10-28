@@ -1,0 +1,28 @@
+body.happ-ui .home-head { text-align: center; padding-top: 8px; min-height: 0; }
+body.happ-ui .home-head .headline { font-size: calc(22px * var(--ts)); line-height: calc(28px * var(--ts)); font-weight: 500; }
+body.happ-ui .home-head .sub { display: none; }
+body.happ-ui .stage { height: calc(var(--power) + 56px); }
+body.happ-ui .power .disc svg.shape { display: none; }
+body.happ-ui .power .disc { background: transparent; border: 6px solid var(--sc-highest); }
+body.happ-ui.on .power .disc { background: color-mix(in oklab, var(--primary) 18%, transparent); border-color: var(--primary); color: var(--primary); }
+body.happ-ui .power svg.pwr { width: 34%; height: 34%; }
+
+body.happ-ui .tiles { display: flex; flex-direction: column; gap: 10px; }
+body.happ-ui .tile { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 2px; min-height: 0; padding: 12px 16px; background: var(--sc-high); color: var(--on-surface); border-radius: calc(20px * var(--rs, 1)); }
+body.happ-ui .tile-title { flex: 0 0 100%; opacity: .7; }
+body.happ-ui .tile-big { flex: 1 1 auto; min-width: 0; font-size: calc(18px * var(--ts)); -webkit-line-clamp: 1; }
+body.happ-ui .tile-small { flex: 0 1 auto; max-width: 100%; }
+body.happ-ui .t-ping { order: 0; } body.happ-ui .t-speed { order: 1; } body.happ-ui .t-proto { order: 2; } body.happ-ui .t-best { order: 3; }
+body.happ-ui .t-speed .spd { font-size: calc(16px * var(--ts)); white-space: nowrap; }
+body.happ-ui .t-speed .tile-small { margin-left: auto; }
+body.happ-ui .svc-dots { flex-direction: row; gap: 10px; margin: 0 0 0 auto; }
+body.happ-ui .svc-chip { font-size: 0; gap: 0; }
+body.happ-ui .svc-chip::after { margin-left: 3px !important; font-size: calc(12px * var(--ts)); }
+
+.hp-sub { margin-bottom: 4px; padding: 12px 16px; border-radius: calc(20px * var(--rs, 1)); background: var(--sc-high); }
+.hp-sub-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.hp-sub-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-sub-meta { font-size: calc(13px * var(--ts)); color: var(--on-surface-variant); white-space: nowrap; }
+.hp-bar { margin-top: 8px; height: 6px; border-radius: 3px; background: var(--sc-highest); overflow: hidden; }
+.hp-bar i { display: block; height: 100%; width: 0; background: var(--primary); border-radius: 3px; transition: width 400ms var(--ease); }
+body.happ-ui .spd { white-space: nowrap; }

@@ -4,10 +4,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object SingBox {
-    private val protocols = setOf("vless", "vmess", "trojan", "shadowsocks", "socks")
+    private val protocols = setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "tuic")
 
     fun supports(outbound: JSONObject): Boolean {
         if (outbound.optString("protocol") !in protocols) return false
+        if (outbound.optString("protocol") == "tuic") return true
         val net = outbound.optJSONObject("streamSettings")?.optString("network", "tcp") ?: "tcp"
         return net in setOf("tcp", "ws", "grpc", "httpupgrade", "h2")
     }
@@ -82,9 +83,22 @@ object SingBox {
             "trojan" -> o.put("type", "trojan").put("password", s.optString("password"))
             "shadowsocks" -> o.put("type", "shadowsocks").put("method", s.optString("method")).put("password", s.optString("password"))
             "socks" -> o.put("type", "socks").put("version", "5")
+            "tuic" -> {
+                val t = outbound.optJSONObject("tuic") ?: JSONObject()
+                o.put("type", "tuic").put("uuid", s.optString("uuid")).put("password", s.optString("password"))
+                    .put("congestion_control", t.optString("congestion_control", "bbr"))
+                    .put("udp_relay_mode", t.optString("udp_relay_mode", "native"))
+                if (t.optBoolean("zero_rtt", false)) o.put("zero_rtt_handshake", true)
+                val ts = stream?.optJSONObject("tlsSettings") ?: JSONObject()
+                val tlsObj = JSONObject().put("enabled", true)
+                    .put("server_name", ts.optString("serverName", s.optString("address")))
+                    .put("alpn", ts.optJSONArray("alpn") ?: JSONArray().put("h3"))
+                if (ts.optBoolean("allowInsecure", false)) tlsObj.put("insecure", true)
+                o.put("tls", tlsObj)
+            }
             else -> throw IllegalStateException("sing-box не поддерживает протокол $protocol")
         }
-        if (protocol != "socks" && protocol != "shadowsocks") {
+        if (protocol != "socks" && protocol != "shadowsocks" && protocol != "tuic") {
             tls(stream)?.let { o.put("tls", it) }
             transport(stream)?.let { o.put("transport", it) }
         }

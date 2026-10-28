@@ -162,6 +162,7 @@ object Ping {
 
     fun measure(server: Server, mode: Int, timeout: Int): PingResult {
         if (try { Plugins.forConf(FasdeqApp.appContext, server.conf) != null } catch (e: Throwable) { false }) return measurePlugin(server, mode, timeout)
+        if (server.conf.trim().startsWith("tuic://", ignoreCase = true)) return measurePlugin(server, mode, timeout)
         if (mode != 1 && isWireGuard(server)) return measureWireGuard(server, timeout)
         val native = NativeCore.ping(server.conf, server.endpoint, mode, timeout)
         if (native != null) return native

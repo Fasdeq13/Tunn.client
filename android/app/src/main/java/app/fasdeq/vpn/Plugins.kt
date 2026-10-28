@@ -100,8 +100,9 @@ object Plugins {
     }
 
     fun enabled(context: Context, key: String): Boolean {
-        val s = state(context).optJSONObject(key) ?: return true
-        return s.optBoolean("enabled", true)
+        val s = state(context).optJSONObject(key)
+        if (s != null && s.has("enabled")) return s.optBoolean("enabled", true)
+        return list(context).firstOrNull { it.key == key }?.manifest?.optBoolean("defaultEnabled", true) ?: true
     }
 
     fun setEnabled(context: Context, key: String, value: Boolean) {
@@ -270,6 +271,24 @@ object Plugins {
             throw IllegalArgumentException("В архиве нет библиотеки $lib")
         }
         return info
+    }
+
+    fun seedBuiltins(context: Context) {
+        val p = prefs(context)
+        val names = try {
+            context.assets.list("builtin-plugins")?.filter { it.endsWith(".zip") }
+        } catch (e: Throwable) {
+            null
+        } ?: return
+        for (n in names) {
+            val flag = "seed_" + n
+            if (p.getBoolean(flag, false)) continue
+            try {
+                context.assets.open("builtin-plugins/$n").use { install(context, it, n) }
+                p.edit().putBoolean(flag, true).apply()
+            } catch (e: Throwable) {
+            }
+        }
     }
 
     fun download(url: String): ByteArray = Net.get(url, "application/octet-stream", 90_000)

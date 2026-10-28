@@ -322,7 +322,9 @@ class AppState(private val app: Application) {
         if (plugin != null) return null
         if (Plugins.usesAwg(app, server.conf)) return null
         return try {
-            Services.probeConfig(Links.parse(Plugins.effectiveConf(app, server.conf)).outbound)
+            val ob = Links.parse(Plugins.effectiveConf(app, server.conf)).outbound
+            if (ob.optString("protocol") == "tuic") return null
+            Services.probeConfig(ob)
         } catch (e: Exception) {
             null
         }
@@ -986,7 +988,7 @@ class AppState(private val app: Application) {
         val outbound = if (dpi || plugin != null || awg) "{}" else try {
             val parsed = Links.parse(Plugins.effectiveConf(app, target.conf)).outbound
             engine = CorePlugins.pick(app, parsed) ?: run {
-                error = "Ядро не найдено. Скачайте Xray: Настройки, Плагины"
+                error = if (parsed.optString("protocol") == "tuic") "Для TUIC включите плагин TUIC (нужно ядро sing-box)" else "Ядро не найдено. Включите ядро в Настройки, Плагины"
                 return
             }
             parsed.toString()

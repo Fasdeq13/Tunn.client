@@ -44,6 +44,10 @@ class FasdeqVpnService : VpnService() {
     @Volatile private var connectedAt = 0L
     @Volatile private var child: java.lang.Process? = null
     @Volatile private var userStop = false
+    @Volatile private var lastParams: Params? = null
+    @Volatile private var retries = 0
+    @Volatile private var recovering = false
+    @Volatile private var connectedMono = 0L
     @Volatile private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var wake: PowerManager.WakeLock? = null
 
@@ -65,7 +69,7 @@ class FasdeqVpnService : VpnService() {
         override fun startup(): Long = 0
 
         override fun shutdown(): Long {
-            if (gen == generation && !stopping) halt("Соединение прервано")
+            if (gen == generation && !stopping) recover("Соединение прервано")
             return 0
         }
 
@@ -107,8 +111,11 @@ class FasdeqVpnService : VpnService() {
         }
         epoch++
         halted = false
+        recovering = false
         userStop = false
-        start(params)
+        retries = 0
+        lastParams = params
+        start(params, false)
         return START_NOT_STICKY
     }
 
@@ -286,7 +293,7 @@ class FasdeqVpnService : VpnService() {
                         process.waitFor()
                     } catch (e: Throwable) {
                     }
-                    if (child === process && !stopping && !halted) halt("Ядро $label остановилось")
+                    if (child === process && !stopping && !halted) recover("Ядро $label остановилось")
                 }.start()
                 return port
             } catch (e: Exception) {
@@ -296,7 +303,7 @@ class FasdeqVpnService : VpnService() {
         throw IllegalStateException("Ядро $label не запустилось")
     }
 
-    private fun start(params: Params) {
+    private fun start(params: Params, isRetry: Boolean) {
         Thread {
             synchronized(lock) {
                 try {
@@ -353,6 +360,7 @@ class FasdeqVpnService : VpnService() {
                     coreFd = fd
                     core.startLoop(config, fd)
                     connectedAt = System.currentTimeMillis()
+                    connectedMono = SystemClock.elapsedRealtime()
                             registerNet()
                     acquireWake()
                     VpnBridge.write(this, true, serverId)
@@ -361,6 +369,10 @@ class FasdeqVpnService : VpnService() {
                         .notify(NOTIFICATION_ID, buildNotification(true))
                 } catch (e: Throwable) {
                     closeCore(1500)
+                    if (isRetry && !userStop && retries < MAX_RETRIES) {
+                        recover(e.message ?: "Не удалось запустить")
+                        return@synchronized
+                    }
                     releaseWake()
                                 VpnBridge.write(this, false, null)
                     VpnBridge.send(this, false, e.message ?: "Не удалось запустить")
@@ -458,6 +470,7 @@ class FasdeqVpnService : VpnService() {
         val started = JSONObject(Native.pluginCall(handle, "start", params.pluginConf, fd, 0L))
         if (!started.optBoolean("ok")) throw IllegalStateException(started.optString("error", "Плагин не запустился"))
         connectedAt = System.currentTimeMillis()
+                    connectedMono = SystemClock.elapsedRealtime()
         tunnelWatch(generation) { pluginStats(handle) }
         registerNet()
         acquireWake()
@@ -516,6 +529,7 @@ class FasdeqVpnService : VpnService() {
         } catch (e: Throwable) {
         }
         connectedAt = System.currentTimeMillis()
+                    connectedMono = SystemClock.elapsedRealtime()
         tunnelWatch(generation) { Awg.stats(handle) }
         registerNet()
         acquireWake()
@@ -654,6 +668,43 @@ class FasdeqVpnService : VpnService() {
         killChild()
     }
 
+    private fun recover(message: String) {
+        val params = lastParams
+        if (connectedMono > 0L && SystemClock.elapsedRealtime() - connectedMono > 60_000L) retries = 0
+        if (params == null || userStop || halted || retries >= MAX_RETRIES) {
+            halt(message)
+            return
+        }
+        synchronized(this) {
+            if (recovering) return
+            recovering = true
+        }
+        val mine = epoch
+        val wait = RETRY_DELAYS[retries.coerceAtMost(RETRY_DELAYS.lastIndex)]
+        retries++
+        stopping = true
+        connectedMono = 0L
+        Thread {
+            try {
+                enterForeground(false)
+            } catch (e: Throwable) {
+            }
+            try {
+                closeCore(1500)
+            } catch (e: Throwable) {
+            }
+            try {
+                Thread.sleep(wait)
+            } catch (e: Throwable) {
+            }
+            recovering = false
+            if (mine == epoch && !userStop && !halted) {
+                stopping = false
+                start(params, true)
+            }
+        }.start()
+    }
+
     private fun halt(message: String?, force: Boolean = false) {
         synchronized(this) {
             if (halted && !force) return
@@ -709,5 +760,7 @@ class FasdeqVpnService : VpnService() {
         const val EXTRA_DPI = "dpi"
         private const val CHANNEL = "vpn_state_quiet"
         private const val NOTIFICATION_ID = 1
+        private const val MAX_RETRIES = 4
+        private val RETRY_DELAYS = longArrayOf(1500L, 3000L, 6000L, 10000L)
     }
 }

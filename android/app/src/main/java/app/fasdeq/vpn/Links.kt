@@ -85,6 +85,7 @@ object Links {
             "vmess" -> parseVmess(text)
             "trojan" -> parseTrojan(text)
             "ss" -> parseSs(text)
+            "tuic" -> parseTuic(text)
             else -> throw IllegalArgumentException("Неподдерживаемый формат ссылки")
         }
     }
@@ -498,6 +499,34 @@ object Links {
             .put("protocol", "vless")
             .put("settings", JSONObject().put("vnext", JSONArray().put(server)))
             .put("streamSettings", stream(l.params, l.host))
+        return Parsed(l.fragment.ifEmpty { l.host }, "${l.host}:${l.port}", out)
+    }
+
+    private fun parseTuic(text: String): Parsed {
+        val l = split(text)
+        val info = decode(l.userInfo)
+        val uuid = info.substringBefore(':')
+        val password = if (info.contains(':')) info.substringAfter(':') else ""
+        require(uuid.isNotEmpty()) { "В ссылке нет идентификатора" }
+        fun flag(k: String) = l.params[k] == "1" || l.params[k] == "true"
+        val alpn = JSONArray()
+        (l.params["alpn"] ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf("h3") }.forEach { alpn.put(it) }
+        val server = JSONObject().put("address", l.host).put("port", l.port).put("uuid", uuid).put("password", password)
+        val tls = JSONObject()
+            .put("serverName", (l.params["sni"] ?: "").ifEmpty { l.host })
+            .put("alpn", alpn)
+            .put("allowInsecure", flag("allow_insecure") || flag("insecure") || flag("allowInsecure"))
+        val out = JSONObject()
+            .put("protocol", "tuic")
+            .put("settings", JSONObject().put("servers", JSONArray().put(server)))
+            .put("streamSettings", JSONObject().put("network", "udp").put("security", "tls").put("tlsSettings", tls))
+            .put(
+                "tuic",
+                JSONObject()
+                    .put("congestion_control", (l.params["congestion_control"] ?: "").ifEmpty { "bbr" })
+                    .put("udp_relay_mode", (l.params["udp_relay_mode"] ?: "").ifEmpty { "native" })
+                    .put("zero_rtt", flag("zero_rtt") || flag("reduce_rtt"))
+            )
         return Parsed(l.fragment.ifEmpty { l.host }, "${l.host}:${l.port}", out)
     }
 

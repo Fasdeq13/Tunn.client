@@ -11,7 +11,10 @@ class FasdeqApp : Application() {
         super.onCreate()
         appContext = this
         val main = currentProcess() == packageName
-        if (main) state = AppState(this)
+        if (main) {
+            state = AppState(this)
+            Thread { Plugins.seedBuiltins(this) }.start()
+        }
         try {
             val prefs = getSharedPreferences("fasdeq", MODE_PRIVATE)
             var key = prefs.getString("core_key", null)

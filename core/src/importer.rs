@@ -33,7 +33,7 @@ pub struct Prepared {
     pub error: Option<String>,
 }
 
-const DIRECT: [&str; 4] = ["vless://", "vmess://", "trojan://", "ss://"];
+const DIRECT: [&str; 5] = ["vless://", "vmess://", "trojan://", "ss://", "tuic://"];
 const DEEP: [&str; 13] = [
     "happ",
     "v2rayng",
@@ -223,7 +223,7 @@ fn deep(line: &str, errors: &mut Vec<String>) -> Option<Source> {
                 r = r.splitn(2, '/').nth(1).unwrap_or("").to_string();
             }
             let rl = r.to_lowercase();
-            if ["http%", "vless%", "vmess%", "trojan%", "ss%"]
+            if ["http%", "vless%", "vmess%", "trojan%", "ss%", "tuic%"]
                 .iter()
                 .any(|p| rl.starts_with(p))
             {

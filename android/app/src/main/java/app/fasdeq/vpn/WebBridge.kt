@@ -132,6 +132,11 @@ class WebBridge(private val host: WebUiActivity) {
                 reply(id)
                 push()
             }
+            "pingOne" -> host.lifecycleScope.launch {
+                app.ping(listOfNotNull(app.servers.firstOrNull { it.id == text })).join()
+                reply(id)
+                push()
+            }
             "pingGroup" -> host.lifecycleScope.launch {
                 app.pingGroup(text).join()
                 reply(id)

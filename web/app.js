@@ -216,126 +216,35 @@
   }
 
   const Power = (() => {
-    const POINTS = 96;
-    const V = { on: 0, busy: 0, press: 0, phase: 0, idle: 0, t: 0 };
-    let hold = 0, shape, shape2, icon_, iconLit, iconWrap, root, raf = 0, last = 0, pressing = false;
-
+    let root;
     function build() {
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("class", "shape");
-      svg.setAttribute("viewBox", "-112 -112 224 224");
       const NS = "http://www.w3.org/2000/svg";
-      shape = document.createElementNS(NS, "path");
-      shape.setAttribute("class", "fill-base");
-      shape2 = document.createElementNS(NS, "path");
-      shape2.setAttribute("class", "fill-on");
-      svg.append(shape, shape2);
-      const mk = (cls) => {
-        const ic = document.createElementNS(NS, "svg");
-        ic.setAttribute("class", "icon " + cls);
-        ic.setAttribute("viewBox", "0 0 24 24");
-        const ip = document.createElementNS(NS, "path");
-        ip.setAttribute("d", ICONS.power);
-        ic.append(ip);
-        return ic;
-      };
-      icon_ = mk("base");
-      iconLit = mk("lit");
-      const wrap = h("div", { class: "icon-wrap", style: "position:relative;width:84px;height:84px" }, icon_, iconLit);
-      iconWrap = wrap;
-      root = h("button", { class: "power", "aria-label": "Подключить или отключить" }, svg, wrap);
-      const down = () => { pressing = true; kick(); };
-      const up = () => { pressing = false; kick(); };
-      root.addEventListener("pointerdown", down);
-      root.addEventListener("pointerup", up);
-      root.addEventListener("pointercancel", up);
-      root.addEventListener("pointerleave", up);
+      const shape = document.createElementNS(NS, "svg");
+      shape.setAttribute("class", "shape");
+      shape.setAttribute("viewBox", "-112 -112 224 224");
+      const path = document.createElementNS(NS, "path");
+      const bt = (S && S.settings && S.settings.button) || DEFAULTS.button;
+      const lobes = clamp(Math.round(bt.lobes), 3, 16);
+      let d = "";
+      for (let i = 0; i < 120; i++) {
+        const a = (i / 120) * Math.PI * 2;
+        const r = 98 * (1 + 0.05 * Math.cos(lobes * a));
+        d += (i ? "L" : "M") + (Math.cos(a) * r).toFixed(2) + " " + (Math.sin(a) * r).toFixed(2);
+      }
+      path.setAttribute("d", d + "Z");
+      shape.append(path);
+      root = h("button", { class: "power", "aria-label": "Подключить или отключить" },
+        h("span", { class: "halo" }), h("span", { class: "arc" }), h("span", { class: "disc" }, shape, icon("power", "pwr")));
       root.addEventListener("click", toggle);
       return root;
     }
-
-    function cfg() { return S.settings.anim; }
-
-    function target() {
-      const s = S.status;
-      return { on: s === "On" ? 1 : 0, busy: s === "Connecting" || s === "Stopping" ? 1 : 0 };
-    }
-
-    function ease(cur, to, rate, dt) { return cur + (to - cur) * (1 - Math.exp(-dt * rate)); }
-
-    function live() { const c = cfg(); return c.all && c.enabled; }
-
-    function draw() {
-      const c = cfg();
-      const bt = S.settings.button;
-      const on = live();
-      const k = on ? clamp(c.intensity, 0, 2) : 0;
-      const idleAmp = c.idle && on ? 0.03 * (1 - V.on) : 0;
-      const amp = (idleAmp + V.on * 0.07 + V.busy * 0.04) * k;
-      const R = 92 * (1 - 0.06 * V.press + 0.012 * V.on * k * Math.sin(V.t * 1.6 * c.tempo));
-      const N = clamp(Math.round(bt.lobes), 3, 16);
-      const ph = V.phase * Math.PI * 2;
-      const style = bt.shape;
-      const ex = 4 - 1.6 * clamp(V.on, 0, 1);
-      let d = "";
-      for (let i = 0; i < POINTS; i++) {
-        const a = (i / POINTS) * Math.PI * 2;
-        let r;
-        if (style === 1) r = R * (1 + amp * 0.35 * Math.cos(2 * a + ph));
-        else if (style === 2) {
-          const q = a - ph * 0.25;
-          const sq = 0.9 / Math.pow(Math.pow(Math.abs(Math.cos(q)), ex) + Math.pow(Math.abs(Math.sin(q)), ex), 1 / ex);
-          r = R * sq * (1 + amp * 0.4 * Math.cos(N * a + ph));
-        } else if (style === 3) r = R * (1 + amp * 1.5 * (2 * Math.abs(Math.cos(N * a / 2 + ph / 2)) - 1));
-        else r = R * (1 + amp * Math.cos(N * a + ph));
-        d += (i ? "L" : "M") + (Math.cos(a) * r).toFixed(2) + " " + (Math.sin(a) * r).toFixed(2);
-      }
-      d += "Z";
-      shape.setAttribute("d", d);
-      shape2.setAttribute("d", d);
-      const mix = clamp(V.on, 0, 1);
-      shape2.style.opacity = mix.toFixed(3);
-      iconLit.style.opacity = mix.toFixed(3);
-      icon_.style.opacity = (1 - mix).toFixed(3);
-      let scale = 1, rot = 0;
-      if (on && c.iconFx) {
-        scale = 1 - 0.07 * V.busy + 0.05 * V.on;
-        rot = Math.sin(V.t * 5 * c.tempo) * 7 * V.busy;
-      }
-      iconWrap.style.transform = "rotate(" + rot.toFixed(2) + "deg) scale(" + scale.toFixed(3) + ")";
-    }
-
-    function frame(now) {
-      raf = 0;
-      if (hold > now) { raf = requestAnimationFrame(frame); last = now; return; }
-      const dt = clamp((now - last) / 1000 || 0.016, 0.001, 0.05);
-      last = now;
-      const c = cfg();
-      const tg = target();
-      if (live()) {
-        V.on = ease(V.on, tg.on, 7, dt);
-        V.busy = ease(V.busy, tg.busy, 9, dt);
-        V.press = ease(V.press, pressing && c.press ? 1 : 0, 20, dt);
-      } else {
-        V.on = tg.on;
-        V.busy = 0;
-        V.press = 0;
-      }
-      V.t += dt;
-      const speed = live() ? ((c.idle ? 0.08 : 0) * (1 - V.on) + V.on * 0.35 + V.busy * 1.6) * c.tempo : 0;
-      V.phase = (V.phase + dt * speed) % 1;
-      draw();
-      const settled = Math.abs(V.on - tg.on) < 0.002 && Math.abs(V.busy - tg.busy) < 0.002 && V.press < 0.002 && !pressing
-        && !(live() && (V.on > 0.5 || (c.idle && tg.on === 0) || tg.busy));
-      if (!settled && !document.hidden) raf = requestAnimationFrame(frame);
-    }
-
     function kick() {
-      if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+      const b = document.body.classList;
+      b.toggle("on", S.status === "On");
+      b.toggle("busy", S.status === "Connecting" || S.status === "Stopping");
     }
-
     function toggle() {
-      if (cfg().haptics) Bridge.act("haptic", S.status === "Off" ? "strong" : "light");
+      if (S.settings.anim.haptics) Bridge.act("haptic", S.status === "Off" ? "strong" : "light");
       if (S.status === "Off") {
         if (!S.selected) { snack("Сначала добавьте сервер"); go("servers"); return; }
         S.status = "Connecting";
@@ -347,10 +256,7 @@
         Bridge.act("disconnect").then(() => setTimeout(syncNow, 700));
       }
     }
-
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
-    function pause(ms) { hold = performance.now() + ms; }
-    return { build, kick, pause };
+    return { build, kick, pause() {} };
   })();
 
   function snack(text) {
@@ -374,9 +280,10 @@
     $$(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.go === name));
     current = name;
     if (name === "servers") { srv.fresh = true; srv.sig = ""; renderServers(); }
+    if (name === "settings" && dirty) { dirty = false; refreshers.forEach((f) => f()); fixCorners(); }
     const nv = $("#view-" + name);
     if (nv && name !== "servers" && !document.body.classList.contains("no-cards")) {
-      Array.from(nv.querySelectorAll(".svc-card,.chip-card,:scope > .list,:scope > .group-title,:scope > .plugin-group")).slice(0, 14).forEach((el, i) => el.style.setProperty("--n", String(i)));
+      Array.from(nv.querySelectorAll(".tile,.chip-card,:scope > .list,:scope > .group-title,:scope > .plugin-group")).slice(0, 14).forEach((el, i) => el.style.setProperty("--n", String(i)));
       nv.classList.add("enter");
       setTimeout(() => nv.classList.remove("enter"), 1300);
     }
@@ -391,81 +298,100 @@
   }
 
   const home = {};
+  const SVC_COLORS = ["#5865F2", "#27A7E7", "#FF0033"];
+  const SVC_LETTERS = ["D", "T", "Y"];
+
+  function tile(cls, title, ...kids) {
+    return h("div", { class: "tile " + cls }, h("div", { class: "tile-title" }, title), ...kids);
+  }
+
   function buildHome() {
     const v = $("#view-home");
     home.word = h("span", { class: "status-word" }, "Отключено");
     home.sub = h("div", { class: "body sub" }, "");
-    home.card = h("button", { class: "chip-card", onclick: () => go("servers") });
-    home.avatar = h("div", { class: "avatar" }, "");
-    home.name = h("div", { class: "name" }, "");
-    home.meta = h("div", { class: "body" }, "");
-    home.card.append(home.avatar, h("div", { class: "grow" }, home.name, home.meta), icon("chevron"));
-    home.svc = h("div", { class: "svc-card" });
-    home.svcSig = "";
     home.down = h("b", {}, "0 Б/с");
     home.up = h("b", {}, "0 Б/с");
-    home.time = h("b", {}, "00:00");
-    const stat = (ic, label, b) => h("div", { class: "stat" }, h("div", { class: "label" }, icon(ic), label), b);
+    home.time = h("span", {}, "00:00");
+    home.proto = h("div", { class: "tile-big" }, "—");
+    home.dots = h("div", { class: "svc-dots" });
+    home.pingName = h("div", { class: "tile-small" }, "");
+    home.pingVal = h("div", { class: "tile-big" }, "—");
+    home.bestName = h("div", { class: "tile-small" }, "");
+    home.bestVal = h("div", { class: "tile-big" }, "—");
+    home.sig = {};
+
+    const speed = tile("t-speed", "Скорость",
+      h("div", { class: "spd" }, icon("down"), home.down),
+      h("div", { class: "spd" }, icon("up"), home.up),
+      h("div", { class: "tile-small" }, icon("clock"), home.time));
+    const proto = tile("t-proto", "Протокол", home.proto, home.dots);
+    home.pingTile = h("button", { class: "tile tap t-ping", onclick: () => {
+      const sv = selectedServer();
+      if (!sv) { snack("Сначала добавьте сервер"); go("servers"); return; }
+      home.pingBusy = true; renderTiles();
+      Bridge.act("pingOne", sv.id).then(() => { home.pingBusy = false; renderTiles(); });
+    } }, h("div", { class: "tile-title" }, "Пинг сервера"), home.pingVal, home.pingName);
+    home.bestTile = h("button", { class: "tile tap t-best", onclick: () => {
+      if (!S.servers.length) { snack("Сначала добавьте сервер"); go("servers"); return; }
+      home.allBusy = true; renderTiles();
+      Bridge.act("checkServices");
+      Bridge.act("ping").then(() => { home.allBusy = false; renderTiles(); });
+    } }, h("div", { class: "tile-title" }, "Все подписки"), home.bestVal, home.bestName);
+
     v.append(
       h("div", { class: "home-head" }, h("h1", { class: "headline" }, home.word), home.sub),
-      h("div", { class: "stage" }, h("div", { class: "rings" }, [0, 1, 2, 3, 4].map((n) => h("i", { class: "ring", style: "--i:" + n }))), Power.build()),
-      home.card,
-      home.svc,
-      h("div", { class: "stats" }, stat("down", "Загрузка", home.down), stat("up", "Отдача", home.up), stat("clock", "В сети", home.time))
+      h("div", { class: "stage" }, Power.build()),
+      h("div", { class: "tiles" }, speed, proto, home.pingTile, home.bestTile)
     );
   }
 
   const WORDS = { Off: "Отключено", Connecting: "Подключаю…", On: "Подключено", Stopping: "Отключаю…" };
   function updateHome() {
     const sv = selectedServer();
-    document.body.classList.toggle("on", S.status === "On");
     const word = WORDS[S.status] || "";
-    if (home.word.textContent !== word) {
-      home.word.classList.add("swap");
-      setTimeout(() => { home.word.textContent = word; home.word.classList.remove("swap"); }, 130);
-    }
-    if (S.error) home.sub.textContent = S.error;
-    else if (!sv) home.sub.textContent = "Добавьте сервер, чтобы начать";
-    else if (S.status === "On") home.sub.textContent = "Защищённое соединение через " + sv.name;
-    else home.sub.textContent = "Нажмите, чтобы подключиться к " + sv.name;
-    home.avatar.textContent = sv ? Array.from(sv.name)[0].toUpperCase() : "+";
-    home.name.textContent = sv ? sv.name : "Сервер не выбран";
-    home.meta.textContent = sv ? sv.proto + " · " + sv.endpoint : "Нажмите, чтобы добавить";
+    if (home.word.textContent !== word) home.word.textContent = word;
+    let sub;
+    if (S.error) sub = S.error;
+    else if (!sv) sub = "Добавьте сервер, чтобы начать";
+    else if (S.status === "On") sub = "Защищённое соединение через " + sv.name;
+    else sub = "Нажмите, чтобы подключиться к " + sv.name;
+    if (home.sub.textContent !== sub) home.sub.textContent = sub;
     home.down.textContent = fmtBytes(S.down) + "/с";
     home.up.textContent = fmtBytes(S.up) + "/с";
     home.time.textContent = fmtTime(S.uptime);
-    renderSvc();
     Power.kick();
+    renderTiles();
   }
 
-  const SVC_COLORS = ["#5865F2", "#27A7E7", "#FF0033"];
-  const SVC_LETTERS = ["D", "T", "Y"];
-  function serverName(id) {
-    const x = S.servers.find((q) => q.id === id);
-    return x ? x.name : "";
-  }
-  function renderSvc() {
-    const sv = S.selected;
-    const sig = JSON.stringify([S.services, sv, S.servers.length]);
-    if (sig === home.svcSig) return;
-    home.svcSig = sig;
-    const checking = !!S.services.checking;
-    const c = sv ? checkOf(sv) : { ms: [null, null, null], busy: false };
-    const btn = h("button", { class: "btn tonal sm" + (checking ? " busy" : ""), onclick: () => { if (!S.servers.length) { snack("Сначала добавьте сервер"); return; } Bridge.act("checkServices"); } }, icon(checking ? "refresh" : "bolt"), checking ? "Проверяю…" : "Проверить");
-    const cells = S.services.names.map((n, i) => {
-      const raw = c.ms[i];
-      const v = raw === -4 ? null : raw;
-      const text = c.busy && v == null ? "…" : v == null ? "—" : v > 0 ? v + " мс" : v === -2 ? "частично" : "нет";
-      const cls = v != null && v > 0 ? (v < 400 ? "ok" : "slow") : v === -2 ? "slow" : v != null ? "bad" : "";
-      const bestId = S.services.best[i];
-      const better = bestId && bestId !== sv;
-      return h("div", { class: "svc-cell" },
-        h("div", { class: "svc-logo", style: "background:" + SVC_COLORS[i] }, SVC_LETTERS[i]),
-        h("div", { class: "svc-name" }, n),
-        h("div", { class: "svc-ms " + cls }, text),
-        better ? h("button", { class: "svc-best", onclick: () => Bridge.act("select", bestId) }, "лучший: " + serverName(bestId)) : h("div", { class: "svc-best none" }, bestId && bestId === sv ? "лучший" : ""));
-    });
-    home.svc.replaceChildren(h("div", { class: "svc-head" }, h("div", { class: "title" }, "Сервисы"), btn), h("div", { class: "svc-grid" }, cells));
+  function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
+
+  function renderTiles() {
+    const sv = selectedServer();
+    setText(home.proto, sv ? sv.proto : "—");
+    const sig = JSON.stringify([sv && sv.id, sv && checkOf(sv.id), S.services.names]);
+    if (sig !== home.sig.dots) {
+      home.sig.dots = sig;
+      const c = sv ? checkOf(sv.id) : { ms: [null, null, null], busy: false };
+      home.dots.replaceChildren(...S.services.names.map((n, i) => {
+        const raw = c.ms[i];
+        const val = raw === -4 ? null : raw;
+        const cls = c.busy && val == null ? "busy" : val == null ? "" : val > 0 ? (val < 400 ? "ok" : "slow") : val === -2 ? "slow" : "bad";
+        return h("span", { class: "svc-chip " + cls, title: n + (val > 0 ? " " + val + " мс" : "") }, h("i", { style: "background:" + SVC_COLORS[i] }, SVC_LETTERS[i % 3]), n);
+      }));
+    }
+    const p = sv ? pingOf(sv.id) : { ms: null, busy: false };
+    const busy = home.pingBusy || p.busy;
+    setText(home.pingVal, busy ? "…" : p.ms > 0 ? p.ms + " мс" : "—");
+    home.pingVal.className = "tile-big " + (busy || !(p.ms > 0) ? "" : p.ms < 150 ? "ok" : p.ms < 350 ? "slow" : "bad");
+    setText(home.pingName, sv ? sv.name : "Сервер не выбран");
+    let best = null, bestMs = 1e9;
+    for (const x of S.servers) {
+      const q = pingOf(x.id);
+      if (q.ms > 0 && q.ms < bestMs) { bestMs = q.ms; best = x; }
+    }
+    const allBusy = home.allBusy || pingBusy();
+    setText(home.bestVal, allBusy ? "Проверяю…" : best ? best.name : "Проверить");
+    setText(home.bestName, best && !allBusy ? bestMs + " мс · " + S.servers.length + " серв." : "Пинг и сервисы всех серверов");
   }
 
   function pingOf(id) {
@@ -675,7 +601,7 @@
   document.addEventListener("pointerdown", (e) => {
     const b = document.body.classList;
     if (b.contains("no-ripple") || b.contains("no-motion") || b.contains("no-controls")) return;
-    const el = e.target.closest && e.target.closest(".row:not(.drag-ghost),.btn,.icon-btn,.nav-item,.chip-card,.fab,.dev,.seg button");
+    const el = e.target.closest && e.target.closest(".row:not(.drag-ghost),.btn,.icon-btn,.chip-card,.fab,.dev,.seg button");
     if (!el || el.disabled) return;
     const r = el.getBoundingClientRect();
     const size = Math.max(r.width, r.height) * 2.2;
@@ -1117,7 +1043,7 @@
   let noticeShown = false;
   function openNotice() {
     noticeShown = true;
-    openSheet(h("div", {}, h("h2", {}, "Версия 2.1"), h("div", { class: "body" }, "Свой значок и перекраска под Material You, ядра Xray и sing-box как плагины, бесплатный сервер обхода DPI с подбором стратегии под вашего оператора."),
+    openSheet(h("div", {}, h("h2", {}, "Версия 3.0"), h("div", { class: "body" }, "Свой значок и перекраска под Material You, ядра Xray и sing-box как плагины, бесплатный сервер обхода DPI с подбором стратегии под вашего оператора."),
       h("div", { class: "actions" }, h("button", { class: "btn filled", onclick: () => { closeSheet(); Bridge.act("noticeSeen"); } }, "Понятно"))));
   }
   let shownUpdate = "";
@@ -1419,12 +1345,12 @@
       group("Интерфейс",
         slider("textScale", "Размер текста", 0.8, 1.5, 0.05, (x) => Math.round(x * 100) + "%"))
     );
-    const dev = (name, role, url) => h("button", { class: "dev", onclick: () => Bridge.act("open", url) },
+    const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
       h("div", { class: "grow" }, h("div", { class: "t" }, name), role ? h("div", { class: "s" }, role) : null));
-    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 2.1 · создатель fasdeq13"),
+    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.0 · создатель fasdeq13"),
       h("div", { class: "group-title tight" }, h("span", {}, "Участники")),
-      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("fezix64", "", "https://github.com/fezix64"))));
+      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", "https://github.com/montik"), dev("fezix64", "", null))));
   }
 
   function fixCorners() {
@@ -1437,8 +1363,21 @@
     $("#i-nav-settings").setAttribute("d", ICONS.settings);
   }
 
+  let dirty = false, queued = null, queuedRaf = 0;
   function onState(next, light) {
-    if (light && S && S.__ready) { updateHome(); return; }
+    if (light && S && S.__ready) { if (current === "home") updateHome(); return; }
+    queued = next;
+    if (S && S.__ready && !first0) {
+      if (!queuedRaf) queuedRaf = requestAnimationFrame(() => { queuedRaf = 0; const n = queued; queued = null; applyState(n); });
+      return;
+    }
+    first0 = false;
+    queued = null;
+    applyState(next);
+  }
+  let first0 = true;
+
+  function applyState(next) {
     const first = !S || !S.__ready;
     next.settings = merge(DEFAULTS, next.settings || {});
     applyPend(next.settings);
@@ -1454,9 +1393,8 @@
     applyTheme();
     applyMotionFlags();
     updateHome();
-    renderServers();
-    refreshers.forEach((f) => f());
-    fixCorners();
+    if (current === "servers" || first) renderServers();
+    if (current === "settings" || first) { refreshers.forEach((f) => f()); fixCorners(); dirty = false; } else dirty = true;
     refreshLive();
     loadPluginUi();
     if (S.notice && !noticeShown && !$("#sheet").classList.contains("show")) openNotice();

@@ -13,7 +13,7 @@ class Prepared(val items: List<Source>, val error: String?)
 
 object Importer {
 
-    private val directSchemes = listOf("vless://", "vmess://", "trojan://", "ss://")
+    private val directSchemes = listOf("vless://", "vmess://", "trojan://", "ss://", "tuic://")
     private val deepSchemes = setOf(
         "happ", "v2rayng", "v2rayn", "clash", "clashmeta", "sing-box", "hiddify",
         "v2box", "streisand", "nekobox", "v2raytun", "flclash", "koala-clash"

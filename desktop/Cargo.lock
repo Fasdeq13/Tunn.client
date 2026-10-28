@@ -1060,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "fasdeq-core"
-version = "1.4.0"
+version = "3.0.0"
 dependencies = [
  "base64 0.22.1",
  "percent-encoding",
@@ -1072,7 +1072,7 @@ dependencies = [
 
 [[package]]
 name = "fasdeqvpn"
-version = "1.6.0"
+version = "3.0.0"
 dependencies = [
  "android-activity",
  "android_logger",

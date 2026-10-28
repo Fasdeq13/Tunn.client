@@ -1,0 +1,13 @@
+{
+  "id": "happ-ui",
+  "name": "Интерфейс Happ",
+  "version": "1.0",
+  "author": "Fasdeq13",
+  "description": "Главный экран в раскладке Happ: подписка сверху, круглая кнопка, карточка сервера и строки статистики. После включения перезапустите приложение",
+  "kinds": ["ui"],
+  "defaultEnabled": false,
+  "ui": { "js": "ui.js", "css": "ui.css" },
+  "settings": [
+    { "key": "sub", "type": "switch", "title": "Карточка подписки сверху", "default": true }
+  ]
+}

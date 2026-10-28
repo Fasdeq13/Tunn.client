@@ -48,6 +48,7 @@ pub fn parse(raw: &str) -> Res<Parsed> {
         "vmess" => parse_vmess(text),
         "trojan" => parse_trojan(text),
         "ss" => parse_ss(text),
+        "tuic" => parse_tuic(text),
         _ => Err("Неподдерживаемый формат ссылки".into()),
     }
 }
@@ -541,6 +542,49 @@ fn parse_vless(text: &str) -> Res<Parsed> {
     })
 }
 
+fn parse_tuic(text: &str) -> Res<Parsed> {
+    let l = split(text)?;
+    let info = decode(&l.user_info);
+    let (uuid, password) = match info.split_once(':') {
+        Some((u, p)) => (u.to_string(), p.to_string()),
+        None => (info.clone(), String::new()),
+    };
+    if uuid.is_empty() {
+        return Err("В ссылке нет идентификатора".into());
+    }
+    let sni = nonempty(get(&l.params, "sni").to_string(), &l.host);
+    let mut alpn: Vec<String> = get(&l.params, "alpn")
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if alpn.is_empty() {
+        alpn.push("h3".into());
+    }
+    let flag = |k: &str| matches!(get(&l.params, k), "1" | "true");
+    let insecure = flag("allow_insecure") || flag("insecure") || flag("allowInsecure");
+    let server = json!({"address": l.host, "port": l.port, "uuid": uuid, "password": password});
+    let out = json!({
+        "protocol": "tuic",
+        "settings": {"servers": [server]},
+        "streamSettings": {
+            "network": "udp",
+            "security": "tls",
+            "tlsSettings": {"serverName": sni, "alpn": alpn, "allowInsecure": insecure}
+        },
+        "tuic": {
+            "congestion_control": nonempty(get(&l.params, "congestion_control").to_string(), "bbr"),
+            "udp_relay_mode": nonempty(get(&l.params, "udp_relay_mode").to_string(), "native"),
+            "zero_rtt": flag("zero_rtt") || flag("reduce_rtt")
+        }
+    });
+    Ok(Parsed {
+        name: nonempty(l.fragment.clone(), &l.host),
+        endpoint: format!("{}:{}", l.host, l.port),
+        outbound: out,
+    })
+}
+
 fn parse_trojan(text: &str) -> Res<Parsed> {
     let l = split(text)?;
     let password = decode(&l.user_info);
@@ -745,4 +789,21 @@ fn parse_interface(text: &str) -> Res<Parsed> {
         endpoint,
         outbound: json!({"protocol": "wireguard", "settings": settings}),
     })
+}
+
+#[cfg(test)]
+mod tuic_tests {
+    use super::*;
+
+    #[test]
+    fn parses_tuic() {
+        let p = parse("tuic://11111111-1111-1111-1111-111111111111:pa%40ss@example.com:443?congestion_control=bbr&alpn=h3&sni=cdn.example.com&allow_insecure=1#My%20TUIC").unwrap();
+        assert_eq!(p.name, "My TUIC");
+        assert_eq!(p.endpoint, "example.com:443");
+        assert_eq!(p.outbound["protocol"], "tuic");
+        assert_eq!(p.outbound["settings"]["servers"][0]["password"], "pa@ss");
+        assert_eq!(p.outbound["streamSettings"]["tlsSettings"]["serverName"], "cdn.example.com");
+        assert_eq!(p.outbound["streamSettings"]["tlsSettings"]["allowInsecure"], true);
+        assert_eq!(protocol("tuic://u:p@h:1"), "tuic");
+    }
 }
