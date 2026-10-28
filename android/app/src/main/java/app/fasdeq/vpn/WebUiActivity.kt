@@ -175,6 +175,8 @@ class WebUiActivity : ComponentActivity() {
                 var last = 0
                 var lastStats = 0
                 var lastAt = 0L
+                var lastPing = 0
+                var lastPingAt = 0L
                 var first = true
                 while (true) {
                     val now = SystemClock.elapsedRealtime()
@@ -184,8 +186,15 @@ class WebUiActivity : ComponentActivity() {
                         last = h
                         lastAt = now
                         lastStats = statsHash()
+                        lastPing = bridge.pingHash()
                         bridge.push()
                     } else {
+                        val ph = bridge.pingHash()
+                        if (ph != lastPing && now - lastPingAt >= 450) {
+                            lastPing = ph
+                            lastPingAt = now
+                            bridge.pushPings()
+                        }
                         val sh = statsHash()
                         if (sh != lastStats) {
                             lastStats = sh
@@ -207,7 +216,7 @@ class WebUiActivity : ComponentActivity() {
         val s = FasdeqApp.state
         return listOf(
             s.status, s.selectedId, s.error,
-            s.servers.toList(), s.groups.toList(), s.pings.toMap(), s.checks.toMap(), s.checkingServices,
+            s.servers.toList(), s.groups.toList(),
             s.themeMode, s.dynamicColors, s.amoled, s.autoConnect, s.dnsPreset, s.dnsCustom, s.mtu,
             s.pingMode, s.pingTimeout, s.autoPing, s.sortPing, s.tuning,
             s.cores.toList(), s.activeCore, s.coreBusy, s.releases, s.autoCheck, s.checkInterval,

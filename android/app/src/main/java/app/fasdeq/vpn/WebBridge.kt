@@ -88,8 +88,55 @@ class WebBridge(private val host: WebUiActivity) {
         return fresh
     }
 
+    private val sentPing = HashMap<String, PingResult?>()
+    private val sentCheck = HashMap<String, ServiceCheck?>()
+
     fun push() {
+        sentPing.clear()
+        sentCheck.clear()
+        val st = app
+        for (s in st.servers) {
+            sentPing[s.id] = st.pings[s.id]
+            sentCheck[s.id] = st.checks[s.id]
+        }
         host.runJs("window.__fasdeqPush(" + JSONObject.quote(snapshot()) + ")")
+    }
+
+    fun pingHash(): Int {
+        val st = app
+        return listOf(st.pings.toMap(), st.checks.toMap(), st.checkingServices).hashCode()
+    }
+
+    fun pushPings() {
+        val st = app
+        val pings = JSONObject()
+        val checks = JSONObject()
+        for (s in st.servers.toList()) {
+            val p = st.pings[s.id]
+            if (sentPing[s.id] != p) {
+                sentPing[s.id] = p
+                val best = p?.best() ?: Int.MAX_VALUE
+                pings.put(
+                    s.id,
+                    JSONObject()
+                        .put("ms", if (best == Int.MAX_VALUE || best <= 0) JSONObject.NULL else best)
+                        .put("busy", p?.busy ?: false)
+                )
+            }
+            val c = st.checks[s.id]
+            if (sentCheck[s.id] != c) {
+                sentCheck[s.id] = c
+                if (c != null) {
+                    val arr = JSONArray()
+                    for (v in c.ms) arr.put(v ?: JSONObject.NULL)
+                    checks.put(s.id, JSONObject().put("ms", arr).put("busy", c.busy))
+                }
+            }
+        }
+        val best = JSONArray()
+        for (i in Services.names.indices) best.put(st.bestFor(i) ?: JSONObject.NULL)
+        val o = JSONObject().put("pings", pings).put("checks", checks).put("best", best).put("checking", st.checkingServices)
+        host.runJs("window.__fasdeqPings(" + JSONObject.quote(o.toString()) + ")")
     }
 
     private fun parse(raw: String): Any? {
@@ -440,7 +487,18 @@ class WebBridge(private val host: WebUiActivity) {
         JSONObject()
     }
 
+    private val protoCache = HashMap<String, String>()
+    private var protoStamp = -1
+
     private fun protoOf(conf: String): String {
+        if (protoStamp != Plugins.stamp) {
+            protoCache.clear()
+            protoStamp = Plugins.stamp
+        }
+        return protoCache.getOrPut(conf) { protoOfRaw(conf) }
+    }
+
+    private fun protoOfRaw(conf: String): String {
         if (Wg.isConf(conf)) return if (Wg.isAwg(conf)) "AmneziaWG" else "WireGuard"
         Plugins.label(host, conf)?.let { return it }
         return when (val scheme = conf.substringBefore("://", "").lowercase()) {

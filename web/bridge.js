@@ -2,6 +2,7 @@
   const listeners = [];
   const native = window.FasdeqNative;
 
+  const pingListeners = [];
   let current = null;
   function emit(state) {
     current = state;
@@ -11,6 +12,12 @@
   if (native) {
     window.__fasdeqPush = function (json) {
       try { emit(JSON.parse(json)); } catch (e) {}
+    };
+    window.__fasdeqPings = function (json) {
+      try {
+        const p = JSON.parse(json);
+        for (const cb of pingListeners) cb(p);
+      } catch (e) {}
     };
     window.__fasdeqStats = function (json) {
       try {
@@ -31,6 +38,7 @@
     window.Bridge = {
       native: true,
       onState(cb) { listeners.push(cb); },
+      onPings(cb) { pingListeners.push(cb); },
       state() { return Promise.resolve(JSON.parse(native.state())); },
       act(name, payload) {
         return new Promise((resolve) => {

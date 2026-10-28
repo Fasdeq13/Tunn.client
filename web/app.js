@@ -368,17 +368,19 @@
   function renderTiles() {
     const sv = selectedServer();
     setText(home.proto, sv ? sv.proto : "—");
-    const sig = JSON.stringify([sv && sv.id, sv && checkOf(sv.id), S.services.names]);
-    if (sig !== home.sig.dots) {
-      home.sig.dots = sig;
-      const c = sv ? checkOf(sv.id) : { ms: [null, null, null], busy: false };
-      home.dots.replaceChildren(...S.services.names.map((n, i) => {
-        const raw = c.ms[i];
-        const val = raw === -4 ? null : raw;
-        const cls = c.busy && val == null ? "busy" : val == null ? "" : val > 0 ? (val < 400 ? "ok" : "slow") : val === -2 ? "slow" : "bad";
-        return h("span", { class: "svc-chip " + cls, title: n + (val > 0 ? " " + val + " мс" : "") }, h("i", { style: "background:" + SVC_COLORS[i] }, SVC_LETTERS[i % 3]), n);
-      }));
+    const names = S.services.names;
+    if (!home.chips || home.chips.length !== names.length) {
+      home.chips = names.map((n, i) => h("span", { class: "svc-chip" }, h("i", { style: "background:" + SVC_COLORS[i % 3] }, SVC_LETTERS[i % 3]), n));
+      home.dots.replaceChildren(...home.chips);
     }
+    const c = sv ? checkOf(sv.id) : { ms: [null, null, null], busy: false };
+    home.chips.forEach((el, i) => {
+      const raw = c.ms[i];
+      const val = raw === -4 ? null : raw;
+      const cls = c.busy && val == null ? "busy" : val == null ? "" : val > 0 ? (val < 400 ? "ok" : "slow") : val === -2 ? "slow" : "bad";
+      const want = "svc-chip" + (cls ? " " + cls : "");
+      if (el.className !== want) el.className = want;
+    });
     const p = sv ? pingOf(sv.id) : { ms: null, busy: false };
     const busy = home.pingBusy || p.busy;
     setText(home.pingVal, busy ? "…" : p.ms > 0 ? p.ms + " мс" : "—");
@@ -479,6 +481,90 @@
     if (!parts.length) return null;
     return h("div", { class: "group-info" }, parts, bar);
   }
+  const PEEK_MS = 800;
+  let peekEl = null;
+  function peekLines(el) {
+    const txt = (n) => (n && n.textContent ? n.textContent.trim() : "");
+    const q = (sel) => Array.from(el.querySelectorAll(sel)).map(txt).filter(Boolean);
+    if (el.classList.contains("tile")) {
+      const title = txt(el.querySelector(".tile-title"));
+      const chips = Array.from(el.querySelectorAll(".svc-chip")).map((c) => {
+        const st = c.classList.contains("ok") ? " · работает" : c.classList.contains("slow") ? " · медленно" : c.classList.contains("bad") ? " · недоступен" : "";
+        return txt(c.lastChild) + st;
+      });
+      const rest = q(".tile-big, .spd, .tile-small").concat(chips);
+      return { title: rest[0] || title, sub: [title].concat(rest.slice(1)) };
+    }
+    const t = txt(el.querySelector(".t, .name, .hp-sub-name, .headline"));
+    const s = q(".s, .sub, .body, .hp-sub-meta, em");
+    if (t) {
+      const extra = el.dataset.sid ? q(".ping") : [];
+      return { title: t, sub: s.concat(extra) };
+    }
+    const lines = (el.innerText || "").split("\n").map((x) => x.trim()).filter(Boolean);
+    return { title: lines[0] || "", sub: lines.slice(1) };
+  }
+  function closePeek(fast) {
+    const p = peekEl;
+    if (!p) return false;
+    peekEl = null;
+    const end = () => { p.card.remove(); p.scrim.remove(); };
+    if (fast) { end(); return true; }
+    p.scrim.style.opacity = "0";
+    const a = p.card.animate([{ opacity: 1, transform: "scale(1)" }, { opacity: 0, transform: "scale(.96)" }], { duration: 170, easing: "ease-in", fill: "forwards" });
+    a.onfinish = end;
+    return true;
+  }
+  function openPeek(el) {
+    closePeek(true);
+    const info = peekLines(el);
+    if (!info.title && !info.sub.length) return;
+    try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
+    const app = $("#app").getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const scrim = h("div", { class: "peek-scrim", onclick: () => closePeek() });
+    const card = h("div", { class: "peek" },
+      h("div", { class: "peek-t" }, info.title),
+      info.sub.map((x, i) => h("div", { class: "peek-s", style: "--d:" + (120 + i * 60) + "ms" }, x)));
+    $("#app").append(scrim, card);
+    const w = Math.min(app.width - 32, 520);
+    const left = (app.width - w) / 2;
+    card.style.width = w + "px";
+    card.style.left = left + "px";
+    const nat = card.offsetHeight;
+    const top = clamp(r.top - app.top + r.height / 2 - nat / 2, 24, app.height - nat - 24);
+    card.style.top = top + "px";
+    const fromTop = r.top - app.top, fromLeft = r.left - app.left;
+    card.animate([
+      { top: fromTop + "px", left: fromLeft + "px", width: r.width + "px", height: r.height + "px", opacity: .2 },
+      { top: top + "px", left: left + "px", width: w + "px", height: nat + "px", opacity: 1 }
+    ], { duration: 420, easing: "cubic-bezier(.05,.7,.1,1)" });
+    requestAnimationFrame(() => { scrim.style.opacity = "1"; });
+    peekEl = { card, scrim };
+  }
+  (function () {
+    const SKIP = "input,textarea,.switch,.btn,.icon-btn,.seg,.rgb-slider,.swatch,.fab,.nav-item,.peek,.row[data-sid]";
+    const HOST = ".row,.tile,.chip-card,.hp-sub,.group-title,.svc-cell";
+    let timer = 0, sx = 0, sy = 0, fired = 0;
+    const stop = () => { clearTimeout(timer); timer = 0; };
+    document.addEventListener("pointerdown", (e) => {
+      stop();
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const t = e.target.closest ? e.target : null;
+      if (!t || t.closest(SKIP)) return;
+      const host = t.closest(HOST);
+      if (!host || host.classList.contains("drag-ghost")) return;
+      sx = e.clientX; sy = e.clientY;
+      timer = setTimeout(() => { timer = 0; fired = performance.now(); openPeek(host); }, PEEK_MS);
+    }, { passive: true });
+    document.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) stop(); }, { passive: true });
+    document.addEventListener("pointerup", stop, { passive: true });
+    document.addEventListener("pointercancel", stop, { passive: true });
+    document.addEventListener("scroll", stop, { capture: true, passive: true });
+    document.addEventListener("contextmenu", (e) => { if (e.target.closest && e.target.closest(HOST)) e.preventDefault(); });
+    document.addEventListener("click", (e) => { if (performance.now() - fired < 450) { e.stopPropagation(); e.preventDefault(); } }, true);
+  })();
+
   function attachDrag(row, s) {
     let timer = null, sx = 0, sy = 0, pid = null;
     const cancel = () => { clearTimeout(timer); timer = null; };
@@ -547,8 +633,14 @@
       else return;
       calc(lastX, cy);
     }, 16);
-    const move = (e) => { cy = e.clientY; lastX = e.clientX; place(); calc(e.clientX, e.clientY); };
+    let moved = false;
+    const idle = setTimeout(() => { if (!moved) { finish(false); openPeek(row); } }, PEEK_MS - 420);
+    const move = (e) => {
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) { moved = true; clearTimeout(idle); }
+      cy = e.clientY; lastX = e.clientX; place(); calc(e.clientX, e.clientY);
+    };
     const finish = (apply) => {
+      clearTimeout(idle);
       clearInterval(loop);
       document.removeEventListener("touchmove", block);
       view.removeEventListener("pointermove", move);
@@ -563,7 +655,7 @@
       setTimeout(() => { drag.suppress = false; }, 350);
       srv.sig = "";
       if (t) {
-        if (S.settings.sortPing && t.group === (s.group || "")) snack("Включена сортировка по пингу, порядок внутри группы не меняется");
+        if (S.settings.sortPing && t.group === (s.group || "")) { setPath("sortPing", false); snack("Сортировка по пингу выключена, порядок сохранён"); }
         Bridge.act("moveServer", { id: s.id, group: t.group, before: t.before });
       }
       renderServers();
@@ -673,6 +765,9 @@
     const t = h("div", { class: "t" });
     const sub = h("div", { class: "s" });
     const side = h("div", { class: "side" });
+    const pingEl = h("span", { class: "ping" }, "—");
+    const dotsEl = h("span", { class: "dots" }, [0, 1, 2].map(() => h("i", { class: "dot" })));
+    side.append(pingEl, dotsEl);
     const row = h("button", { class: "row", "data-sid": id, onclick: () => { if (drag.suppress) return; Bridge.act("select", id); } },
       avatar,
       h("div", { class: "grow" }, t, sub),
@@ -680,7 +775,7 @@
       h("span", { class: "icon-btn", role: "button", "aria-label": "Переименовать", onclick: (e) => { e.stopPropagation(); renameSheet("Название сервера", cur().name, (x) => Bridge.act("renameServer", { id, name: x })); } }, icon("edit")),
       h("span", { class: "icon-btn", role: "button", "aria-label": "Удалить", onclick: (e) => { e.stopPropagation(); Bridge.act("remove", id); snack("Сервер удалён"); } }, icon("del")));
     attachDrag(row, s);
-    return { el: row, avatar, t, sub, side, sig: "", sel: false };
+    return { el: row, avatar, t, sub, side, pingEl, dotsEl, sig: "", sel: false };
   }
   function paintRow(r, s) {
     const p = pingOf(s.id);
@@ -700,9 +795,21 @@
     r.avatar.textContent = Array.from(s.name)[0].toUpperCase();
     r.t.textContent = s.name;
     r.sub.textContent = s.proto + " · " + s.endpoint;
-    const chip = pingChip(s.id);
-    if (pingChanged) chip.classList.add("pop");
-    r.side.replaceChildren(chip, dotsFor(s.id));
+    const pe = r.pingEl;
+    const txt = p.busy ? "…" : p.ms == null || p.ms <= 0 ? "—" : p.ms + " мс";
+    if (pe.textContent !== txt) pe.textContent = txt;
+    if (p.busy || p.ms == null || p.ms <= 0) pe.style.removeProperty("--c");
+    else pe.style.setProperty("--c", p.ms < 150 ? "var(--good)" : p.ms < 350 ? "var(--warn)" : "var(--error)");
+    if (pingChanged) { pe.classList.remove("pop"); void pe.offsetWidth; pe.classList.add("pop"); }
+    const ck = checkOf(s.id);
+    for (let i = 0; i < 3; i++) {
+      const raw = ck.ms[i];
+      const v = raw === -4 ? null : raw;
+      const cls = ck.busy && v == null ? "busy" : v == null ? "" : v > 0 ? (v < 400 ? "ok" : "slow") : v === -2 ? "slow" : "bad";
+      const d = r.dotsEl.children[i];
+      const want = "dot" + (cls ? " " + cls : "");
+      if (d.className !== want) d.className = want;
+    }
   }
   function renderServers() {
     if (drag.on) { srv.dirty = true; return; }
@@ -714,7 +821,7 @@
     }
     const busy = pingBusy();
     const chk = !!S.services.checking;
-    const topSig = busy + "|" + chk + "|" + (S.servers.length ? 1 : 0);
+    const topSig = busy + "|" + chk + "|" + (S.servers.length ? 1 : 0) + "|" + !!srv.importing;
     if (topSig !== srv.topSig) {
       srv.topSig = topSig;
       const pingBtn = h("button", { class: "btn tonal" + (busy ? " busy" : ""), onclick: async () => {
@@ -725,7 +832,11 @@
       } }, icon(busy ? "refresh" : "bolt"), busy ? "Проверяю…" : "Проверить пинг");
       const svcBtn = h("button", { class: "btn tonal" + (chk ? " busy" : ""), onclick: () => { if (!S.services.checking && S.servers.length) Bridge.act("checkServices"); } }, icon(chk ? "refresh" : "check"), chk ? "Проверяю…" : "Сервисы");
       const parts = [h("div", { class: "top-row two" }, h("h1", { class: "headline" }, "Серверы"), h("div", { class: "tools" }, svcBtn, pingBtn))];
-      if (!S.servers.length) {
+      if (srv.importing) {
+        parts.push(h("div", { class: "importing" },
+          h("div", { class: "busy-line" }, h("div", { class: "bar" }), h("div", { class: "body" }, "Загружаю серверы…")),
+          [0, 1, 2, 3, 4].map((i) => h("div", { class: "skel", style: "--i:" + i }, h("i", {}), h("div", {}, h("b", {}), h("s", {}))))));
+      } else if (!S.servers.length) {
         parts.push(h("div", { class: "empty" }, h("div", { class: "title-large" }, "Серверов пока нет"), h("div", { class: "body" }, "Вставьте ссылку vless://, trojan://, ss:// или адрес подписки")));
       }
       srv.top.replaceChildren(...parts);
@@ -833,8 +944,19 @@
     const ok = h("button", { class: "btn filled", onclick: async () => {
       const text = ta.value.trim();
       if (!text) return;
-      const r = await Bridge.act("add", text);
+      if (srv.importing) { snack("Сначала дождитесь загрузки"); return; }
+      srv.importing = true;
+      srv.topSig = "";
       closeSheet();
+      if (current !== "servers") go("servers"); else renderServers();
+      const fab = $("#fab"); if (fab) fab.classList.add("disabled");
+      let r;
+      try { r = await Bridge.act("add", text); } finally {
+        srv.importing = false;
+        srv.topSig = "";
+        if (fab) fab.classList.remove("disabled");
+      }
+      renderServers();
       snack(r && r.error ? r.error : r && r.added ? "Добавлено: " + r.added : "Уже есть в списке");
     } }, "Добавить");
     openSheet(h("div", {}, h("h2", {}, "Добавить сервер"), h("div", { class: "body" }, "Одна или несколько ссылок, либо адрес подписки"), ta,
@@ -1043,7 +1165,7 @@
   let noticeShown = false;
   function openNotice() {
     noticeShown = true;
-    openSheet(h("div", {}, h("h2", {}, "Версия 3.0"), h("div", { class: "body" }, "Свой значок и перекраска под Material You, ядра Xray и sing-box как плагины, бесплатный сервер обхода DPI с подбором стратегии под вашего оператора."),
+    openSheet(h("div", {}, h("h2", {}, "Версия 3.1"), h("div", { class: "body" }, "Свой значок и перекраска под Material You, ядра Xray и sing-box как плагины, бесплатный сервер обхода DPI с подбором стратегии под вашего оператора."),
       h("div", { class: "actions" }, h("button", { class: "btn filled", onclick: () => { closeSheet(); Bridge.act("noticeSeen"); } }, "Понятно"))));
   }
   let shownUpdate = "";
@@ -1348,9 +1470,9 @@
     const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
       h("div", { class: "grow" }, h("div", { class: "t" }, name), role ? h("div", { class: "s" }, role) : null));
-    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.0 · создатель fasdeq13"),
+    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.1 · создатель fasdeq13"),
       h("div", { class: "group-title tight" }, h("span", {}, "Участники")),
-      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", "https://github.com/montik"), dev("fezix64", "", null))));
+      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", null), dev("fezix64", "", null))));
   }
 
   function fixCorners() {
@@ -1376,6 +1498,28 @@
     applyState(next);
   }
   let first0 = true;
+
+  let pingRaf = 0;
+  function lightPings() {
+    const busy = pingBusy();
+    const chk = !!S.services.checking;
+    const flip = busy !== srv.lastBusy || chk !== srv.lastChk;
+    srv.lastBusy = busy;
+    srv.lastChk = chk;
+    if (current === "servers") {
+      if (flip) renderServers();
+      else srv.rows.forEach((r, id) => { if (r.el.isConnected) { const s = srv.byId[id]; if (s) paintRow(r, s); } });
+    }
+    if (current === "home") renderTiles();
+  }
+  function onPings(p) {
+    if (!S || !S.__ready) return;
+    S.pings = Object.assign(S.pings || {}, p.pings);
+    S.services.checks = Object.assign(S.services.checks || {}, p.checks);
+    S.services.best = p.best;
+    S.services.checking = p.checking;
+    if (!pingRaf) pingRaf = requestAnimationFrame(() => { pingRaf = 0; lightPings(); });
+  }
 
   function applyState(next) {
     const first = !S || !S.__ready;
@@ -1414,6 +1558,7 @@
     $$(".nav-item").forEach((n) => n.addEventListener("click", () => go(n.dataset.go)));
     $("#scrim").addEventListener("click", closeSheet);
     Bridge.onState(onState);
+    if (Bridge.onPings) Bridge.onPings(onPings);
     $("#view-servers").addEventListener("scroll", onServersScroll, { passive: true });
     window.addEventListener("resize", () => { srv.rowH = 68; updateWindows(true); });
     $$(".view").forEach((v) => v.classList.toggle("left", v.dataset.view !== "home"));
@@ -1425,6 +1570,7 @@
     if (q.get("view")) { document.body.style.setProperty("--x", "1"); go(q.get("view")); }
     window.addEventListener("resize", () => refreshers.forEach((f) => f()));
     window.__back = function () {
+      if (closePeek()) return true;
       if ($("#sheet").classList.contains("show")) { closeSheet(); return true; }
       if (current !== "home") { go("home"); return true; }
       return false;

@@ -560,12 +560,24 @@ class AppState(private val app: Application) {
         }
     }
 
+    private val importLock = kotlinx.coroutines.sync.Mutex()
+
     suspend fun importText(
         text: String,
         nameHint: String = "",
         groupHint: String = "",
         forceGroup: String? = null,
         forceUrl: String = ""
+    ): String? = importLock.withLock {
+        withContext(Dispatchers.Default) { importTextImpl(text, nameHint, groupHint, forceGroup, forceUrl) }
+    }
+
+    private suspend fun importTextImpl(
+        text: String,
+        nameHint: String,
+        groupHint: String,
+        forceGroup: String?,
+        forceUrl: String
     ): String? {
         val input = text.trim()
         if (input.isEmpty()) return "Вставьте ссылку или конфигурацию"
