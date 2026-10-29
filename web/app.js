@@ -113,12 +113,33 @@
   }
   function hex2(n) { return clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0"); }
   function toHex(c) { return "#" + hex2(c.r) + hex2(c.g) + hex2(c.b); }
-  function parseHex(t) {
-    const m = /^#?([0-9a-f]{6})$/i.exec(String(t).trim());
-    if (!m) return null;
-    const n = parseInt(m[1], 16);
+  const COLOR_NAMES = {
+    red: "ff0000", green: "00a000", blue: "0000ff", white: "ffffff", black: "000000", orange: "ff8000", purple: "8000ff", violet: "8f00ff", pink: "ff69b4",
+    yellow: "ffd600", cyan: "00e5ff", teal: "009688", gray: "808080", grey: "808080", brown: "8d5524", lime: "76ff03", indigo: "3f51b5", magenta: "ff00ff",
+    "красный": "ff0000", "зелёный": "00a000", "зеленый": "00a000", "синий": "0000ff", "белый": "ffffff", "чёрный": "000000", "черный": "000000", "оранжевый": "ff8000",
+    "фиолетовый": "8f00ff", "розовый": "ff69b4", "жёлтый": "ffd600", "желтый": "ffd600", "голубой": "00b0ff", "бирюзовый": "009688", "серый": "808080",
+  };
+  function parseColor(t) {
+    let s = String(t == null ? "" : t).trim().toLowerCase().replace(/[\u200b\ufeff]/g, "");
+    if (!s) return null;
+    const chan = (a, b, c) => {
+      const v = [a, b, c].map(Number);
+      if (v.some((x) => !isFinite(x) || x < 0 || x > 255)) return null;
+      return { r: v[0], g: v[1], b: v[2] };
+    };
+    let m = /^rgba?\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})/.exec(s);
+    if (m) return chan(m[1], m[2], m[3]);
+    m = /^(\d{1,3})[\s,;.]+(\d{1,3})[\s,;.]+(\d{1,3})$/.exec(s);
+    if (m) return chan(m[1], m[2], m[3]);
+    if (COLOR_NAMES[s]) s = COLOR_NAMES[s];
+    s = s.replace(/^(#|0x)/, "").replace(/\s+/g, "");
+    if (/^[0-9a-f]{3,4}$/.test(s)) s = s.slice(0, 3).split("").map((x) => x + x).join("");
+    else if (/^[0-9a-f]{8}$/.test(s)) s = s.slice(0, 6);
+    if (!/^[0-9a-f]{6}$/.test(s)) return null;
+    const n = parseInt(s, 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
+  function parseHex(t) { return parseColor(t); }
 
   const THEME_KEYS = ["--primary", "--on-primary", "--primary-container", "--on-primary-container", "--secondary-container", "--on-secondary-container", "--tertiary",
     "--surface", "--sc-low", "--sc", "--sc-high", "--sc-highest", "--on-surface", "--on-surface-variant", "--outline", "--outline-variant", "--accent-text"];
@@ -249,7 +270,11 @@
         if (!S.selected) { snack("Сначала добавьте сервер"); go("servers"); return; }
         S.status = "Connecting";
         updateHome();
-        Bridge.act("connect").then(() => setTimeout(syncNow, 700));
+        Bridge.act("connect").then((r) => {
+          if (r && r.conflict) { S.status = "Off"; updateHome(); conflictSheet(r.conflict); }
+          else if (r && r.error) { S.status = "Off"; updateHome(); snack(r.error); }
+          setTimeout(syncNow, 700);
+        });
       } else if (S.status === "On" || S.status === "Connecting") {
         S.status = "Stopping";
         updateHome();
@@ -566,19 +591,31 @@
   })();
 
   function attachDrag(row, s) {
-    let timer = null, sx = 0, sy = 0, pid = null;
+    let timer = null, sx = 0, sy = 0, pid = null, down = false, lastTap = 0, lx = 0, ly = 0;
     const cancel = () => { clearTimeout(timer); timer = null; };
-    row.addEventListener("contextmenu", (e) => e.preventDefault());
+    row.addEventListener("contextmenu", (e) => { e.preventDefault(); cancel(); if (!drag.on) openPeek(row); });
     row.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       if (e.target.closest(".icon-btn")) return;
-      sx = e.clientX; sy = e.clientY; pid = e.pointerId;
+      sx = e.clientX; sy = e.clientY; pid = e.pointerId; down = true;
       cancel();
-      timer = setTimeout(() => { timer = null; startDrag(row, s, sx, sy, pid); }, 420);
+      timer = setTimeout(() => { timer = null; down = false; startDrag(row, s, sx, sy, pid); }, 420);
     });
-    row.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
-    row.addEventListener("pointerup", cancel);
-    row.addEventListener("pointercancel", cancel);
+    row.addEventListener("pointermove", (e) => {
+      if (!down) return;
+      const far = Math.hypot(e.clientX - sx, e.clientY - sy);
+      if (e.pointerType === "mouse" && far > 6 && !drag.on) { cancel(); down = false; startDrag(row, s, sx, sy, pid); return; }
+      if (timer && far > 10) cancel();
+    });
+    const end = () => { down = false; cancel(); };
+    row.addEventListener("pointerup", end);
+    row.addEventListener("pointercancel", end);
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".icon-btn") || drag.suppress) return;
+      const now = performance.now();
+      if (now - lastTap < 340 && Math.hypot(e.clientX - lx, e.clientY - ly) < 32) { lastTap = 0; openPeek(row); return; }
+      lastTap = now; lx = e.clientX; ly = e.clientY;
+    });
   }
   function startDrag(row, s, sx, sy, pid) {
     const view = $("#view-servers");
@@ -633,14 +670,10 @@
       else return;
       calc(lastX, cy);
     }, 16);
-    let moved = false;
-    const idle = setTimeout(() => { if (!moved) { finish(false); openPeek(row); } }, PEEK_MS - 420);
     const move = (e) => {
-      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 8) { moved = true; clearTimeout(idle); }
       cy = e.clientY; lastX = e.clientX; place(); calc(e.clientX, e.clientY);
     };
     const finish = (apply) => {
-      clearTimeout(idle);
       clearInterval(loop);
       document.removeEventListener("touchmove", block);
       view.removeEventListener("pointermove", move);
@@ -1162,10 +1195,34 @@
     });
   }
 
+  function conflictSheet(names, left) {
+    const list = names.join(", ");
+    const msg = h("div", { class: "body", style: "margin-top:10px" }, left ? "Не удалось завершить: " + left.join(", ") + ". Закройте вручную или запустите FasdeqVPN от имени администратора." : "Запущено: " + list + ". Эти программы перехватывают трафик и мешают работе FasdeqVPN. Завершить их?");
+    const kill = h("button", { class: "btn filled" }, "Завершить процесс");
+    const close = h("button", { class: "btn text", onclick: closeSheet }, "Закрыть");
+    kill.onclick = async () => {
+      kill.disabled = true; kill.textContent = "Завершаю…";
+      const r = await Bridge.act("killConflicts");
+      if (r && r.ok) {
+        closeSheet();
+        S.status = "Connecting"; updateHome();
+        const c = await Bridge.act("connectForce");
+        if (c && c.error) { S.status = "Off"; updateHome(); snack(c.error); }
+        setTimeout(syncNow, 700);
+      } else {
+        closeSheet();
+        setTimeout(() => conflictSheet(names, (r && r.left) || names), 380);
+      }
+    };
+    openSheet(h("div", {}, h("h2", {}, "Процесс мешает работе"), msg,
+      h("div", { class: "body", style: "margin-top:8px" }, "Если закрыть окно, VPN не запустится."),
+      h("div", { class: "actions", style: "margin-top:18px" }, close, kill)));
+  }
+
   let noticeShown = false;
   function openNotice() {
     noticeShown = true;
-    openSheet(h("div", {}, h("h2", {}, "Версия 3.1"), h("div", { class: "body" }, "Свой значок и перекраска под Material You, ядра Xray и sing-box как плагины, бесплатный сервер обхода DPI с подбором стратегии под вашего оператора."),
+    openSheet(h("div", {}, h("h2", {}, "Версия 3.2"), h("div", { class: "body" }, "Версия для ПК теперь на том же интерфейсе, что и на телефоне, с адаптацией под планшеты и широкие окна. Перед запуском проверяется, не мешают ли Happ, zapret и другие. Цвет принимает #fff, #ffffff и rgb(). Полное имя сервера: двойной тап или правый клик, долгое нажатие переносит."),
       h("div", { class: "actions" }, h("button", { class: "btn filled", onclick: () => { closeSheet(); Bridge.act("noticeSeen"); } }, "Понятно"))));
   }
   let shownUpdate = "";
@@ -1275,6 +1332,8 @@
   function action(title, sub, onTap) {
     return row(title, sub, h("span", { class: "icon-btn" }, icon("chevron")), onTap);
   }
+  const DESK = !!(window.Bridge && window.Bridge.desktop);
+  const only = (cond, node) => (cond ? node : []);
   function group(title, ...rows) {
     return [h("div", { class: "group-title" }, h("span", {}, title)), h("div", { class: "list" }, rows)];
   }
@@ -1303,6 +1362,13 @@
       if (!zone(e)) return;
       sx = e.clientX; sy = e.clientY; id = e.pointerId;
       clearTimeout(timer);
+      if (e.pointerType === "mouse") {
+        if (e.button !== 0) return;
+        armed = true; box.classList.add("armed");
+        try { box.setPointerCapture(id); } catch (x) {}
+        move(e);
+        return;
+      }
       timer = setTimeout(() => { armed = true; box.classList.add("armed"); try { box.setPointerCapture(id); } catch (x) {} Bridge.act("haptic", "strong"); }, 350);
     });
     box.addEventListener("pointermove", (e) => {
@@ -1318,12 +1384,17 @@
     return h("div", { class: "row block" }, h("div", { class: "head" }, h("div", { class: "t" }, "Палитра")),
       h("div", { class: "pal" }, roles.map((r) => h("div", { class: "pal-i" }, h("i", { style: "background:var(" + r[0] + ")" }), h("span", {}, r[1])))));
   }
+  function useCustom(c) {
+    if (S.settings.dynamic) { setPath("dynamic", false); snack("Системные цвета выключены, применён ваш цвет"); }
+    setPath("accent", { r: c.r, g: c.g, b: c.b });
+  }
+
   function colorEditor() {
     const prev = h("div", { class: "rgb-preview" });
     const name = h("span", {}, "");
     const code = h("span", {}, "");
     prev.append(name, code);
-    const sw_ = PRESETS.map((p) => h("button", { class: "swatch", "aria-label": p[0], style: "background:" + toHex({ r: p[1], g: p[2], b: p[3] }), onclick: () => setPath("accent", { r: p[1], g: p[2], b: p[3] }) }));
+    const sw_ = PRESETS.map((p) => h("button", { class: "swatch", "aria-label": p[0], style: "background:" + toHex({ r: p[1], g: p[2], b: p[3] }), onclick: () => useCustom({ r: p[1], g: p[2], b: p[3] }) }));
     const swBox = h("div", { class: "swatches" }, sw_);
     const chan = (key, label, tint) => {
       const input = h("input", { type: "range", min: 0, max: 255, step: 1 });
@@ -1333,7 +1404,7 @@
         const c = Object.assign({}, S.settings.accent);
         c[key] = Number(input.value);
         paint(c[key]);
-        setPath("accent", c);
+        useCustom(c);
       });
       input.style.setProperty("--c", tint);
       const box = h("div", { class: "rgb-slider" }, h("div", { class: "head", style: "display:flex;justify-content:space-between" }, h("div", { class: "t" }, label), val), input);
@@ -1341,11 +1412,24 @@
       return { box, input, paint };
     };
     const ch = [chan("r", "Красный", "#ff5c5c"), chan("g", "Зелёный", "#5cdc7a"), chan("b", "Синий", "#5c8cff")];
-    const hex = h("input", { class: "hex", maxlength: 7, spellcheck: "false", "aria-label": "Цвет в формате HEX" });
-    hex.addEventListener("change", () => {
-      const c = parseHex(hex.value);
-      if (c) setPath("accent", c); else hex.value = toHex(S.settings.accent).toUpperCase();
-    });
+    const hex = h("input", { class: "hex", maxlength: 40, spellcheck: "false", autocomplete: "off", autocapitalize: "off", inputmode: "text", placeholder: "#RRGGBB", "aria-label": "Цвет: #fff, #ffffff, rgb(255,0,0) или название" });
+    let hexTimer = 0;
+    const applyHex = (final) => {
+      const c = parseColor(hex.value);
+      hex.classList.toggle("bad", !c && hex.value.trim() !== "");
+      if (c) {
+        const cur = S.settings.accent;
+        if (cur.r !== c.r || cur.g !== c.g || cur.b !== c.b || S.settings.dynamic) useCustom(c);
+        if (final) hex.value = toHex(c).toUpperCase();
+      } else if (final) {
+        hex.value = toHex(S.settings.accent).toUpperCase();
+        hex.classList.remove("bad");
+      }
+    };
+    hex.addEventListener("input", () => { clearTimeout(hexTimer); hexTimer = setTimeout(() => applyHex(false), 220); });
+    hex.addEventListener("change", () => { clearTimeout(hexTimer); applyHex(true); });
+    hex.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(hexTimer); applyHex(true); hex.blur(); } });
+    hex.addEventListener("blur", () => { clearTimeout(hexTimer); applyHex(true); });
     const r = h("div", { class: "row block" }, h("div", { class: "head" }, h("div", { class: "t" }, "Свой цвет")), prev, swBox, h("div", { class: "field-row" }, h("div", { class: "body", style: "flex:1" }, "Код цвета"), hex), ch.map((c) => c.box));
     refreshers.push(() => {
       const c = S.settings.accent;
@@ -1372,7 +1456,7 @@
 
     put(
       h("div", { class: "top-row" }, h("h1", { class: "headline" }, "Настройки")),
-      h("div", { class: "body" }, "Чтобы изменить ползунок, зажмите его на долю секунды и ведите вбок. Прокрутка настройки не меняет."),
+      h("div", { class: "body" }, (DESK ? "Ползунки двигаются мышью." : "Чтобы изменить ползунок, зажмите его на долю секунды и ведите вбок. Прокрутка настройки не меняет.")),
       group("Цвет и тема",
         seg("theme", ["Система", "Светлая", "Тёмная"], "Тема"),
         colorEditor(),
@@ -1419,35 +1503,39 @@
         sw("autoConnect", "Подключаться при запуске"),
         seg("dns", ["Cloudflare", "Google", "Quad9", "AdGuard", "Свой"], "DNS"),
         textBox("dnsCustom", "Свои DNS через запятую", "1.1.1.1, 8.8.8.8", () => S.settings.dns === 4),
-        slider("mtu", "MTU", 1280, 1500, 10, (x) => String(x))),
+        only(!DESK, slider("mtu", "MTU", 1280, 1500, 10, (x) => String(x)))),
       group("Низкоуровневые",
         sw("tuning.ipv6", "IPv6", "Выключите, если сайты зависают"),
         sw("tuning.sniff", "Sniffing", "Определять домен по HTTP, TLS и QUIC"),
         sw("tuning.quic", "Блокировать QUIC", "Браузеры перейдут на TCP"),
         sw("tuning.lan", "Локальная сеть напрямую", "10.x, 172.16.x, 192.168.x мимо VPN"),
-        sw("tuning.unm", "Сеть без лимита", "Система не считает трафик VPN мобильным"),
+        only(!DESK, sw("tuning.unm", "Сеть без лимита", "Система не считает трафик VPN мобильным")),
         sw("tuning.mux", "Mux", "Не работает с XTLS Vision"),
         slider("tuning.muxc", "Потоков Mux", 1, 64, 1, (x) => String(x), () => S.settings.tuning.mux),
         seg("tuning.log", ["Нет", "Ошибки", "Предупр.", "Инфо", "Отладка"], "Журнал Xray"),
         seg("tuning.ds", ["AsIs", "IPIfNonMatch", "IPOnDemand"], "Domain strategy"),
         slider("tuning.idle", "Таймаут простоя", 30, 1800, 30, (x) => x + " с"),
         slider("tuning.buf", "Буфер на соединение", 0, 2048, 64, (x) => (x === 0 ? "по умолчанию" : x + " КБ"))),
-      group("Приложения",
+      only(!DESK, group("Приложения",
         seg("tuning.am", ["Все", "Исключить", "Только"], "Через VPN идут"),
-        textBox("tuning.apps", "Пакеты через запятую", "org.telegram.messenger, com.discord", () => S.settings.tuning.am !== 0)),
+        textBox("tuning.apps", "Пакеты через запятую", "org.telegram.messenger, com.discord", () => S.settings.tuning.am !== 0))),
       group("Ядро",
         action("Ядро Xray", "Встроенное или своё, версия и загрузка", openCores)),
       group("Сервисы",
         sw("autoCheck", "Проверять сервисы автоматически", "Discord, Telegram и YouTube через каждый сервер, пока VPN включён"),
         slider("checkInterval", "Интервал проверки", 5, 240, 5, (x) => x + " мин", () => S.settings.autoCheck),
         action("Проверить сейчас", "Запустить проверку сервисов для всех серверов", () => { Bridge.act("checkServices"); snack("Проверяю сервисы…"); go("home"); })),
-      group("Клиент для подписок",
+      only(!DESK, group("Клиент для подписок",
         seg("mask", ["Tunn", "Happ", "v2RayTun", "Incy"], "Под кого маскироваться"),
-        action("HWID", "Идентификатор устройства: показать, копировать, сбросить", hwidSheet)),
-      group("Иконка",
-        action("Иконка приложения", "Варианты, Material You и своя картинка", openIconSheet)),
-      group("Плагины",
-        action("Плагины", "Протоколы, правила обхода, дополнения интерфейса", openPlugins)),
+        action("HWID", "Идентификатор устройства: показать, копировать, сбросить", hwidSheet))),
+      only(!DESK, group("Иконка",
+        action("Иконка приложения", "Варианты, Material You и своя картинка", openIconSheet))),
+      only(!DESK, group("Плагины",
+        action("Плагины", "Протоколы, правила обхода, дополнения интерфейса", openPlugins))),
+      only(DESK, group("Окно и запуск",
+        sw("closeToTray", "Сворачивать в трей", "Крестик скрывает окно, VPN продолжает работать"),
+        sw("autostart", "Запускать вместе с системой"),
+        action("Выйти из FasdeqVPN", "Отключить VPN и закрыть приложение", () => Bridge.act("quit")))),
       group("Проверка пинга",
         seg("pingMode", ["Авто", "TCP", "UDP", "Оба", "ICMP"], "Способ"),
         seg("pingTimeout", ["2 с", "4 с", "8 с"], "Таймаут"),
@@ -1463,14 +1551,14 @@
           else if (r && r.available) openUpdate();
           else snack("Установлена последняя версия");
         }),
-        action("Открыть страницу релизов", "Скачать APK вручную", () => Bridge.act("open", "https://github.com/Fasdeq13/FasdeqVPN/releases/"))),
+        action("Открыть страницу релизов", (DESK ? "Скачать новую версию вручную" : "Скачать APK вручную"), () => Bridge.act("open", "https://github.com/Fasdeq13/FasdeqVPN/releases/"))),
       group("Интерфейс",
         slider("textScale", "Размер текста", 0.8, 1.5, 0.05, (x) => Math.round(x * 100) + "%"))
     );
     const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
       h("div", { class: "grow" }, h("div", { class: "t" }, name), role ? h("div", { class: "s" }, role) : null));
-    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.1 · создатель fasdeq13"),
+    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.2 · создатель fasdeq13"),
       h("div", { class: "group-title tight" }, h("span", {}, "Участники")),
       h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", null), dev("fezix64", "", null))));
   }

@@ -53,6 +53,51 @@
     return;
   }
 
+  if (window.__FQHTTP) {
+    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const wrap = (st) => { st.dark = mq ? mq.matches : true; return st; };
+    const applyStats = (p) => {
+      if (!current) return;
+      current.rx = p.rx; current.tx = p.tx; current.down = p.down; current.up = p.up; current.uptime = p.uptime;
+      for (const cb of listeners) cb(current, true);
+    };
+    async function call(path, body) {
+      const r = await fetch(path, body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json", "X-Fasdeq": "1" }, body: JSON.stringify(body) });
+      return r.json();
+    }
+    let seq = 0;
+    (async function loop() {
+      let fails = 0;
+      for (;;) {
+        try {
+          const r = await call("/api/poll?since=" + seq);
+          fails = 0;
+          seq = r.seq;
+          for (const e of r.ev) {
+            if (e.k === "state") emit(wrap(e.d));
+            else if (e.k === "pings") pingListeners.forEach((cb) => cb(e.d));
+            else if (e.k === "stats") applyStats(e.d);
+          }
+        } catch (err) {
+          fails++;
+          await new Promise((res) => setTimeout(res, Math.min(3000, 300 * fails)));
+        }
+      }
+    })();
+    if (mq && mq.addEventListener) mq.addEventListener("change", () => { if (current) emit(wrap(current)); });
+    window.Bridge = {
+      native: false,
+      desktop: true,
+      onState(cb) { listeners.push(cb); },
+      onPings(cb) { pingListeners.push(cb); },
+      state() { return call("/api/state").then(wrap); },
+      act(name, payload) { return call("/api/act", { name, payload: payload === undefined ? null : payload }).catch(() => ({})); },
+      ready() {},
+      bars() {},
+    };
+    return;
+  }
+
   const S = {
     status: "Off",
     selected: "s2",

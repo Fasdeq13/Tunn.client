@@ -388,10 +388,6 @@ pub fn start(bin: &Path, config: &Value, wait_port: u16) -> Result<Proc, String>
     }
 }
 
-pub fn start_vpn(_payload: &Value) -> Result<Proc, String> {
-    Err("Недоступно на этой платформе".into())
-}
-
 pub fn query_stats(bin: &Path, api_port: u16) -> Option<(u64, u64)> {
     let mut cmd = Command::new(bin);
     cmd.args(["api", "statsquery", &format!("--server=127.0.0.1:{}", api_port)])

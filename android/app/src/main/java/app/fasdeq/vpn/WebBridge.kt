@@ -407,7 +407,7 @@ class WebBridge(private val host: WebUiActivity) {
                 reply(id)
             }
             "noticeSeen" -> {
-                prefs.edit().putBoolean("notice21", true).apply()
+                prefs.edit().putBoolean("notice32", true).apply()
                 reply(id)
             }
             "haptic" -> {
@@ -601,7 +601,7 @@ class WebBridge(private val host: WebUiActivity) {
         settings.put("checkInterval", st.checkInterval.toDouble())
         o.put("settings", settings)
         o.put("plugins", plugins())
-        o.put("notice", !prefs.getBoolean("notice21", false))
+        o.put("notice", !prefs.getBoolean("notice32", false))
 
         val checks = JSONObject()
         for (s in st.servers) {

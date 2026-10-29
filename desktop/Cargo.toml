@@ -1,57 +1,32 @@
 [package]
 name = "fasdeqvpn"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2021"
 description = "FasdeqVPN"
-
-[lib]
-name = "fasdeq_iced"
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "fasdeqvpn"
 path = "src/main.rs"
-
-[features]
-sim = []
 
 [dependencies]
 fasdeq-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "3", features = ["socks-proxy"] }
-base64 = "0.22"
-percent-encoding = "2"
 resvg = "0.45"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 rand = "0.9"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-iced = { version = "0.14", features = ["canvas", "svg", "tokio", "advanced"] }
+tiny_http = "0.12"
 directories = "6"
+tao = "0.34"
+wry = "0.53"
 tray-icon = "0.21"
 rfd = "0.15"
 auto-launch = "0.5"
-
-[target.'cfg(target_os = "android")'.dependencies]
-iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "wayland", "crisp", "web-colors", "thread-pool", "canvas", "svg", "tokio", "advanced"] }
-iced_winit = "0.14"
-winit = { version = "0.30", default-features = false, features = ["android-native-activity", "rwh_06"] }
-android-activity = { version = "0.6", features = ["native-activity"] }
-jni = "0.21"
-android_logger = "0.15"
-log = "0.4"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = { package = "gtk", version = "0.18" }
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
 [build-dependencies]
 winresource = "0.1"
-
-[patch.crates-io]
-iced_winit = { path = "vendor/iced_winit" }
 
 [profile.release]
 opt-level = 3

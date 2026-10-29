@@ -15,6 +15,9 @@ pub struct Parsed {
 pub struct Fetched {
     pub body: String,
     pub group: String,
+    pub used: u64,
+    pub total: u64,
+    pub expire: u64,
 }
 
 type Res<T> = Result<T, String>;
@@ -199,6 +202,7 @@ pub fn fetch_meta(url: &str) -> Res<Fetched> {
     };
     let mut title = header("profile-title");
     let content_disposition = header("content-disposition");
+    let (used, total, expire) = userinfo(&header("subscription-userinfo"));
     let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
     if title.to_lowercase().starts_with("base64:") {
         let rest = &title[7..];
@@ -236,7 +240,26 @@ pub fn fetch_meta(url: &str) -> Res<Fetched> {
     Ok(Fetched {
         body,
         group: decode(&title).trim().to_string(),
+        used,
+        total,
+        expire,
     })
+}
+
+fn userinfo(raw: &str) -> (u64, u64, u64) {
+    let (mut up, mut down, mut total, mut expire) = (0u64, 0u64, 0u64, 0u64);
+    for part in raw.split(';') {
+        let Some((k, v)) = part.split_once('=') else { continue };
+        let v = v.trim().parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
+        match k.trim().to_lowercase().as_str() {
+            "upload" => up = v,
+            "download" => down = v,
+            "total" => total = v,
+            "expire" => expire = v,
+            _ => {}
+        }
+    }
+    (up + down, total, expire)
 }
 
 fn filename(cd: &str) -> Option<String> {
