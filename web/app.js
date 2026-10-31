@@ -293,8 +293,11 @@
   }
 
   let current = "home";
+  let merged = false;
+  const serversOn = () => current === "servers" || (merged && current === "home");
   const order = ["home", "servers", "settings"];
   function go(name) {
+    if (merged && name === "servers") name = "home";
     if (name === current) return;
     const from = order.indexOf(current), to = order.indexOf(name);
     $$(".view").forEach((v) => {
@@ -304,7 +307,7 @@
     });
     $$(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.go === name));
     current = name;
-    if (name === "servers") { srv.fresh = true; srv.sig = ""; renderServers(); }
+    if (name === "servers" || (merged && name === "home")) { srv.fresh = true; srv.sig = ""; renderServers(); }
     if (name === "settings" && dirty) { dirty = false; refreshers.forEach((f) => f()); fixCorners(); }
     const nv = $("#view-" + name);
     if (nv && name !== "servers" && !document.body.classList.contains("no-cards")) {
@@ -313,7 +316,7 @@
       setTimeout(() => nv.classList.remove("enter"), 1300);
     }
     Power.pause(380);
-    $("#fab") && $("#fab").classList.toggle("hide", name !== "servers");
+    $("#fab") && $("#fab").classList.toggle("hide", !(name === "servers" || (merged && name === "home")));
     if (name === "home") Power.kick();
     void from;
   }
@@ -357,11 +360,13 @@
       Bridge.act("pingOne", sv.id).then(() => { home.pingBusy = false; renderTiles(); });
     } }, h("div", { class: "tile-title" }, "Пинг сервера"), home.pingVal, home.pingName);
     home.bestTile = h("button", { class: "tile tap t-best", onclick: () => {
-      if (!S.servers.length) { snack("Сначала добавьте сервер"); go("servers"); return; }
-      home.allBusy = true; renderTiles();
-      Bridge.act("checkServices");
-      Bridge.act("ping").then(() => { home.allBusy = false; renderTiles(); });
-    } }, h("div", { class: "tile-title" }, "Все подписки"), home.bestVal, home.bestName);
+      const b = bestServer();
+      if (!b) { snack(S.servers.length ? "Пинг ещё не проверен. Запустите проверку на вкладке «Серверы»" : "Сначала добавьте сервер"); go("servers"); return; }
+      if (b.server.id === S.selected) { snack("Этот сервер уже выбран"); return; }
+      const pick = () => { Bridge.act("select", b.server.id); snack("Выбран сервер: " + b.server.name); };
+      if (S.settings.askBest === false) { pick(); return; }
+      bestSheet(b, pick);
+    } }, h("div", { class: "tile-title" }, "Лучший сервер"), home.bestVal, home.bestName);
 
     v.append(
       h("div", { class: "home-head" }, h("h1", { class: "headline" }, home.word), home.sub),
@@ -411,14 +416,32 @@
     setText(home.pingVal, busy ? "…" : p.ms > 0 ? p.ms + " мс" : "—");
     home.pingVal.className = "tile-big " + (busy || !(p.ms > 0) ? "" : p.ms < 150 ? "ok" : p.ms < 350 ? "slow" : "bad");
     setText(home.pingName, sv ? sv.name : "Сервер не выбран");
+    const bs = bestServer();
+    const allBusy = pingBusy();
+    setText(home.bestVal, allBusy ? "Проверяю…" : bs ? bs.server.name : "—");
+    setText(home.bestName, bs && !allBusy ? bs.ms + " мс · нажмите, чтобы выбрать" : "Сначала проверьте пинг");
+  }
+
+  function bestServer() {
     let best = null, bestMs = 1e9;
     for (const x of S.servers) {
       const q = pingOf(x.id);
       if (q.ms > 0 && q.ms < bestMs) { bestMs = q.ms; best = x; }
     }
-    const allBusy = home.allBusy || pingBusy();
-    setText(home.bestVal, allBusy ? "Проверяю…" : best ? best.name : "Проверить");
-    setText(home.bestName, best && !allBusy ? bestMs + " мс · " + S.servers.length + " серв." : "Пинг и сервисы всех серверов");
+    return best ? { server: best, ms: bestMs } : null;
+  }
+
+  function bestSheet(b, pick) {
+    const box = h("input", { type: "checkbox", class: "chk" });
+    const done = (yes) => {
+      if (box.checked) setPath("askBest", false);
+      closeSheet();
+      if (yes) pick();
+    };
+    openSheet(h("div", {}, h("h2", {}, "Выбрать лучший сервер?"),
+      h("div", { class: "body" }, b.server.name + " · " + b.ms + " мс. Это самый быстрый из ваших серверов по последней проверке пинга."),
+      h("label", { class: "check-row" }, box, h("span", {}, "Больше не спрашивать")),
+      h("div", { class: "actions" }, h("button", { class: "btn text", onclick: () => done(false) }, "Нет"), h("button", { class: "btn filled", onclick: () => done(true) }, "Да, выбрать"))));
   }
 
   function pingOf(id) {
@@ -568,7 +591,7 @@
     peekEl = { card, scrim };
   }
   (function () {
-    const SKIP = "input,textarea,.switch,.btn,.icon-btn,.seg,.rgb-slider,.swatch,.fab,.nav-item,.peek,.row[data-sid]";
+    const SKIP = "input,textarea,.switch,.btn,.icon-btn,.seg,.rgb-slider,.swatch,.fab,.nav-item,.peek,.icon-btn";
     const HOST = ".row,.tile,.chip-card,.hp-sub,.group-title,.svc-cell";
     let timer = 0, sx = 0, sy = 0, fired = 0;
     const stop = () => { clearTimeout(timer); timer = 0; };
@@ -586,120 +609,15 @@
     document.addEventListener("pointerup", stop, { passive: true });
     document.addEventListener("pointercancel", stop, { passive: true });
     document.addEventListener("scroll", stop, { capture: true, passive: true });
-    document.addEventListener("contextmenu", (e) => { if (e.target.closest && e.target.closest(HOST)) e.preventDefault(); });
+    document.addEventListener("contextmenu", (e) => {
+      const host = e.target.closest ? e.target.closest(HOST) : null;
+      if (!host) return;
+      e.preventDefault();
+      if (performance.now() - fired > 700 && !e.target.closest(SKIP.replace(",.icon-btn", ""))) { stop(); fired = performance.now(); openPeek(host); }
+    });
     document.addEventListener("click", (e) => { if (performance.now() - fired < 450) { e.stopPropagation(); e.preventDefault(); } }, true);
   })();
 
-  function attachDrag(row, s) {
-    let timer = null, sx = 0, sy = 0, pid = null, down = false, lastTap = 0, lx = 0, ly = 0;
-    const cancel = () => { clearTimeout(timer); timer = null; };
-    row.addEventListener("contextmenu", (e) => { e.preventDefault(); cancel(); if (!drag.on) openPeek(row); });
-    row.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      if (e.target.closest(".icon-btn")) return;
-      sx = e.clientX; sy = e.clientY; pid = e.pointerId; down = true;
-      cancel();
-      timer = setTimeout(() => { timer = null; down = false; startDrag(row, s, sx, sy, pid); }, 420);
-    });
-    row.addEventListener("pointermove", (e) => {
-      if (!down) return;
-      const far = Math.hypot(e.clientX - sx, e.clientY - sy);
-      if (e.pointerType === "mouse" && far > 6 && !drag.on) { cancel(); down = false; startDrag(row, s, sx, sy, pid); return; }
-      if (timer && far > 10) cancel();
-    });
-    const end = () => { down = false; cancel(); };
-    row.addEventListener("pointerup", end);
-    row.addEventListener("pointercancel", end);
-    row.addEventListener("click", (e) => {
-      if (e.target.closest(".icon-btn") || drag.suppress) return;
-      const now = performance.now();
-      if (now - lastTap < 340 && Math.hypot(e.clientX - lx, e.clientY - ly) < 32) { lastTap = 0; openPeek(row); return; }
-      lastTap = now; lx = e.clientX; ly = e.clientY;
-    });
-  }
-  function startDrag(row, s, sx, sy, pid) {
-    const view = $("#view-servers");
-    drag.on = true;
-    const rect = row.getBoundingClientRect();
-    const ghost = row.cloneNode(true);
-    ghost.classList.remove("first", "last", "selected");
-    ghost.classList.add("drag-ghost");
-    ghost.style.cssText = "position:fixed;left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;margin:0;z-index:60;pointer-events:none";
-    $("#app").append(ghost);
-    row.classList.add("drag-src");
-    try { navigator.vibrate && navigator.vibrate(18); } catch (e) {}
-    try { view.setPointerCapture(pid); } catch (e) {}
-    let cy = sy, target = null, lastX = sx;
-    const block = (e) => { if (e.cancelable) e.preventDefault(); };
-    document.addEventListener("touchmove", block, { passive: false });
-    const clear = () => {
-      $$(".drop-before,.drop-after,.drop-head").forEach((x) => x.classList.remove("drop-before", "drop-after", "drop-head"));
-    };
-    const calc = (x, y) => {
-      const els = document.elementsFromPoint(x, y);
-      clear();
-      target = null;
-      for (const el of els) {
-        const r = el.closest && el.closest(".row[data-sid]");
-        if (r && r.getAttribute("data-sid") !== s.id && !r.classList.contains("drag-ghost")) {
-          const box = r.getBoundingClientRect();
-          const list = r.parentElement;
-          const rows = Array.from(list.querySelectorAll(".row[data-sid]")).filter((x) => x.getAttribute("data-sid") !== s.id);
-          const idx = rows.indexOf(r);
-          const after = y > box.top + box.height / 2;
-          const nextRow = after ? rows[idx + 1] : r;
-          target = { group: list.getAttribute("data-gid") || "", before: nextRow ? nextRow.getAttribute("data-sid") : null };
-          r.classList.add(after ? "drop-after" : "drop-before");
-          return;
-        }
-        const t = el.closest && el.closest(".group-title[data-gid]");
-        if (t) {
-          const gid = t.getAttribute("data-gid") || "";
-          const first = (srv.groupIds[gid] || []).filter((x) => x !== s.id)[0];
-          target = { group: gid, before: first || null };
-          t.classList.add("drop-head");
-          return;
-        }
-      }
-    };
-    const place = () => { ghost.style.transform = "translateY(" + (cy - sy) + "px) scale(1.02)"; };
-    const vr = view.getBoundingClientRect();
-    const loop = setInterval(() => {
-      if (cy < vr.top + 90) view.scrollTop -= 16;
-      else if (cy > vr.bottom - 140) view.scrollTop += 16;
-      else return;
-      calc(lastX, cy);
-    }, 16);
-    const move = (e) => {
-      cy = e.clientY; lastX = e.clientX; place(); calc(e.clientX, e.clientY);
-    };
-    const finish = (apply) => {
-      clearInterval(loop);
-      document.removeEventListener("touchmove", block);
-      view.removeEventListener("pointermove", move);
-      view.removeEventListener("pointerup", up);
-      view.removeEventListener("pointercancel", cancelUp);
-      const t = apply ? target : null;
-      clear();
-      ghost.remove();
-      row.classList.remove("drag-src");
-      drag.on = false;
-      drag.suppress = true;
-      setTimeout(() => { drag.suppress = false; }, 350);
-      srv.sig = "";
-      if (t) {
-        if (S.settings.sortPing && t.group === (s.group || "")) { setPath("sortPing", false); snack("Сортировка по пингу выключена, порядок сохранён"); }
-        Bridge.act("moveServer", { id: s.id, group: t.group, before: t.before });
-      }
-      renderServers();
-    };
-    const up = () => finish(true);
-    const cancelUp = () => finish(false);
-    view.addEventListener("pointermove", move);
-    view.addEventListener("pointerup", up);
-    view.addEventListener("pointercancel", cancelUp);
-    place();
-  }
   function renameSheet(title, current, onSave) {
     const input = h("input", { class: "hex wide", value: current, spellcheck: "false", maxlength: 60 });
     const ok = h("button", { class: "btn filled", onclick: () => { const t = input.value.trim(); if (!t) return; closeSheet(); onSave(t); } }, "Сохранить");
@@ -801,13 +719,12 @@
     const pingEl = h("span", { class: "ping" }, "—");
     const dotsEl = h("span", { class: "dots" }, [0, 1, 2].map(() => h("i", { class: "dot" })));
     side.append(pingEl, dotsEl);
-    const row = h("button", { class: "row", "data-sid": id, onclick: () => { if (drag.suppress) return; Bridge.act("select", id); } },
+    const row = h("button", { class: "row", "data-sid": id, onclick: () => { Bridge.act("select", id); } },
       avatar,
       h("div", { class: "grow" }, t, sub),
       side,
       h("span", { class: "icon-btn", role: "button", "aria-label": "Переименовать", onclick: (e) => { e.stopPropagation(); renameSheet("Название сервера", cur().name, (x) => Bridge.act("renameServer", { id, name: x })); } }, icon("edit")),
       h("span", { class: "icon-btn", role: "button", "aria-label": "Удалить", onclick: (e) => { e.stopPropagation(); Bridge.act("remove", id); snack("Сервер удалён"); } }, icon("del")));
-    attachDrag(row, s);
     return { el: row, avatar, t, sub, side, pingEl, dotsEl, sig: "", sel: false };
   }
   function paintRow(r, s) {
@@ -1069,17 +986,50 @@
     }
     dpiPolling = false;
   }
+  const coreSw = {};
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function toggleCore(p, cores) {
+    const other = cores.find((x) => x.id !== p.id && x.present);
+    const act = (id, op, value) => Bridge.act("corePlugin", { id, op, value });
+    if (!p.core) { await act(p.id, "enable", !p.enabled); return; }
+    if (!p.enabled) {
+      const off = other && other.enabled ? other : null;
+      if (coreSw[p.id]) coreSw[p.id].classList.add("on");
+      if (off) setTimeout(() => { if (coreSw[off.id]) coreSw[off.id].classList.remove("on"); }, 220);
+      await sleep(off ? 480 : 260);
+      await act(p.id, "enable", true);
+      await act(p.id, "primary");
+      if (off) await act(off.id, "enable", false);
+      snack(p.name + " включён" + (off ? ", " + off.name + " выключен" : ""));
+    } else {
+      if (!other) { snack("Нужно хотя бы одно ядро"); return; }
+      if (coreSw[p.id]) coreSw[p.id].classList.remove("on");
+      setTimeout(() => { if (coreSw[other.id]) coreSw[other.id].classList.add("on"); }, 220);
+      await sleep(480);
+      await act(other.id, "enable", true);
+      await act(other.id, "primary");
+      await act(p.id, "enable", false);
+      snack(other.name + " включён, " + p.name + " выключен");
+    }
+  }
   function corePluginRows() {
     const CP = S.corePlugins || { list: [], dpi: {} };
-    return CP.list.map((p) => h("div", { class: "row plug" },
-      h("div", { class: "grow" },
-        h("div", { class: "t" }, p.name + (p.primary ? " · основное" : "")),
-        h("div", { class: "s" }, p.description + (p.id === "dpi" && p.present ? " · " + dpiLine(CP.dpi) : ""))),
-      p.core && p.present && p.enabled && !p.primary ? h("button", { class: "btn text sm", onclick: () => Bridge.act("corePlugin", { id: p.id, op: "primary" }) }, "Основным") : null,
-      p.id === "dpi" && p.present && p.enabled ? h("button", { class: "btn text sm", onclick: () => { Bridge.act("dpiSearch"); snack("Подбор начался, это может занять до 5 минут и идёт в фоне"); pollDpi(); } }, "Заново") : null,
-      p.present ? h("button", { class: "switch" + (p.enabled ? " on" : ""), "aria-label": "Включить", onclick: () => Bridge.act("corePlugin", { id: p.id, op: "enable", value: !p.enabled }) }) : null,
-      p.present ? h("button", { class: "icon-btn", "aria-label": "Удалить", onclick: () => Bridge.act("corePlugin", { id: p.id, op: "delete" }) }, icon("del"))
-        : (p.id === "xray" ? h("button", { class: "btn tonal sm", onclick: async () => { snack("Скачиваю Xray…"); const r = await Bridge.act("corePlugin", { id: "xray", op: "restore" }); if (r && r.error) snack(r.error); } }, icon("download"), "Скачать") : null)));
+    const cores = CP.list.filter((p) => p.core);
+    return CP.list.map((p) => {
+      const sw = p.present
+        ? h("button", { class: "switch" + (p.enabled ? " on" : ""), "aria-label": "Включить", onclick: () => toggleCore(p, cores) })
+        : (p.id === "singbox" || p.id === "tuic") ? h("button", { class: "switch", disabled: true, "aria-label": "Нет в сборке" }) : null;
+      if (sw && p.present) coreSw[p.id] = sw;
+      const note = !p.present && (p.id === "singbox" || p.id === "tuic") ? " · нет в этой сборке (соберите: SINGBOX=1 ./build.sh android)" : "";
+      return h("div", { class: "row plug" },
+        h("div", { class: "grow" },
+          h("div", { class: "t" }, p.name + (p.primary && p.enabled ? " · основное" : "")),
+          h("div", { class: "s" }, p.description + note + (p.id === "dpi" && p.present ? " · " + dpiLine(CP.dpi) : ""))),
+        p.id === "dpi" && p.present && p.enabled ? h("button", { class: "btn text sm", onclick: () => { Bridge.act("dpiSearch"); snack("Подбор начался, это может занять до 5 минут и идёт в фоне"); pollDpi(); } }, "Заново") : null,
+        sw,
+        p.present ? h("button", { class: "icon-btn", "aria-label": "Удалить", onclick: () => Bridge.act("corePlugin", { id: p.id, op: "delete" }) }, icon("del"))
+          : (p.id === "xray" ? h("button", { class: "btn tonal sm", onclick: async () => { snack("Скачиваю Xray…"); const r = await Bridge.act("corePlugin", { id: "xray", op: "restore" }); if (r && r.error) snack(r.error); } }, icon("download"), "Скачать") : null));
+    });
   }
 
   function openIconSheet() {
@@ -1140,6 +1090,16 @@
       set: (name, value) => { const p = S.plugins.list.find((x) => x.id === id); if (p) { p.values[name] = value; Bridge.act("pluginSet", { key: p.key, name, value }); } },
       addSettingsGroup: (title, nodes) => { const g = group(title, nodes); $("#view-settings").insertBefore(h("div", { class: "plugin-group" }, g), $("#view-settings .about")); fixCorners(); },
       addHomeCard: (node) => { $("#view-home").append(node); },
+      mergeServers: (on) => {
+        merged = !!on;
+        document.body.classList.toggle("merged", merged);
+        const sv = $("#view-servers");
+        if (merged) $("#view-home").append(sv);
+        else $("#views").insertBefore(sv, $("#view-settings"));
+        srv.fresh = true; srv.sig = "";
+        renderServers();
+        const fab = $("#fab"); if (fab) fab.classList.toggle("hide", !serversOn());
+      },
       sheet: (node) => openSheet(node),
       closeSheet,
     };
@@ -1503,6 +1463,7 @@
         sw("autoConnect", "Подключаться при запуске"),
         seg("dns", ["Cloudflare", "Google", "Quad9", "AdGuard", "Свой"], "DNS"),
         textBox("dnsCustom", "Свои DNS через запятую", "1.1.1.1, 8.8.8.8", () => S.settings.dns === 4),
+        only(DESK && S.tun, seg("tunMode", ["Авто", "Системный прокси", "TUN (весь трафик)"], "Режим VPN")),
         only(!DESK, slider("mtu", "MTU", 1280, 1500, 10, (x) => String(x)))),
       group("Низкоуровневые",
         sw("tuning.ipv6", "IPv6", "Выключите, если сайты зависают"),
@@ -1555,12 +1516,20 @@
       group("Интерфейс",
         slider("textScale", "Размер текста", 0.8, 1.5, 0.05, (x) => Math.round(x * 100) + "%"))
     );
+    const tgLink = () => {
+      const ic = h("span", { class: "tg-ic" });
+      ic.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M21.6 3.4 2.7 10.7c-.9.4-.9 1 0 1.3l4.8 1.5 1.8 5.6c.2.6.4.8.9.8s.6-.2.9-.5l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3-14.3c.3-1.2-.4-1.8-1.2-1.2zM8.5 13.2l9.1-5.7c.4-.3.8-.1.5.2l-7.5 6.8-.3 3.1z"/></svg>';
+      return h("button", { class: "dev tg", onclick: () => Bridge.act("open", "https://t.me/Tunn_client") }, ic,
+        h("div", { class: "grow" }, h("div", { class: "t" }, "Tunn в Telegram"), h("div", { class: "s" }, "t.me/Tunn_client")));
+    };
     const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
       h("div", { class: "grow" }, h("div", { class: "t" }, name), role ? h("div", { class: "s" }, role) : null));
     v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.2 · создатель fasdeq13"),
       h("div", { class: "group-title tight" }, h("span", {}, "Участники")),
-      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", null), dev("fezix64", "", null))));
+      h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", null), dev("fezix64", "", null)),
+      h("div", { class: "group-title tight" }, h("span", {}, "Официальный канал")),
+      tgLink()));
   }
 
   function fixCorners() {
@@ -1594,7 +1563,7 @@
     const flip = busy !== srv.lastBusy || chk !== srv.lastChk;
     srv.lastBusy = busy;
     srv.lastChk = chk;
-    if (current === "servers") {
+    if (serversOn()) {
       if (flip) renderServers();
       else srv.rows.forEach((r, id) => { if (r.el.isConnected) { const s = srv.byId[id]; if (s) paintRow(r, s); } });
     }
@@ -1609,11 +1578,17 @@
     if (!pingRaf) pingRaf = requestAnimationFrame(() => { pingRaf = 0; lightPings(); });
   }
 
+  let pickingFirst = false;
   function applyState(next) {
     const first = !S || !S.__ready;
     next.settings = merge(DEFAULTS, next.settings || {});
     applyPend(next.settings);
-    next.servers = next.servers || [];
+    next.servers = (next.servers || []).filter((x) => !x.hidden);
+    if (next.selected && !next.servers.some((x) => x.id === next.selected) && next.servers.length && !pickingFirst) {
+      pickingFirst = true;
+      next.selected = next.servers[0].id;
+      Bridge.act("select", next.selected).then(() => setTimeout(() => { pickingFirst = false; }, 600));
+    }
     next.services = next.services || { names: ["Discord", "Telegram", "YouTube"], checking: false, checks: {}, best: [] };
     next.cores = next.cores || { active: "", builtin: "", busy: null, list: [], releases: null };
     next.update = next.update || { available: false };
@@ -1625,7 +1600,7 @@
     applyTheme();
     applyMotionFlags();
     updateHome();
-    if (current === "servers" || first) renderServers();
+    if (serversOn() || first) renderServers();
     if (current === "settings" || first) { refreshers.forEach((f) => f()); fixCorners(); dirty = false; } else dirty = true;
     refreshLive();
     loadPluginUi();
@@ -1672,3 +1647,8 @@
   }
   boot();
 })();
+
+document.addEventListener("focusin", (e) => {
+  const t = e.target;
+  if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT") && t.closest("#sheet")) setTimeout(() => { try { t.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) {} }, 320);
+});

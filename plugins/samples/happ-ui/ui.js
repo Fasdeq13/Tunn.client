@@ -9,7 +9,8 @@ FasdeqPlugin.define("happ-ui", function (api) {
     h("div", { class: "hp-sub-row" }, name, meta),
     h("div", { class: "hp-bar" }, bar));
   var home = document.getElementById("view-home");
-  home.insertBefore(card, home.firstChild);
+  home.insertBefore(card, home.querySelector(".stage"));
+  api.mergeServers(true);
 
   function gb(n) { return (Number(n) / 1073741824).toFixed(n >= 1e10 ? 0 : 1) + " ГБ"; }
   function days(sec) { return Math.max(0, Math.ceil((sec * 1000 - Date.now()) / 86400000)); }

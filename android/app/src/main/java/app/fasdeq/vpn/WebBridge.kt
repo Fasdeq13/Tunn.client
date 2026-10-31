@@ -515,6 +515,32 @@ class WebBridge(private val host: WebUiActivity) {
         }
     }
 
+    private val hideCache = HashMap<String, Boolean>()
+    private var hideSig = ""
+
+    private fun hiddenFor(conf: String): Boolean {
+        val sig = listOf(
+            CorePlugins.usable(host, CorePlugins.XRAY), CorePlugins.usable(host, CorePlugins.SINGBOX),
+            CorePlugins.usable(host, CorePlugins.TUIC), CorePlugins.primary(host), Plugins.stamp
+        ).toString()
+        if (sig != hideSig) {
+            hideCache.clear()
+            hideSig = sig
+        }
+        return hideCache.getOrPut(conf) { computeHidden(conf) }
+    }
+
+    private fun computeHidden(conf: String): Boolean {
+        if (Wg.isConf(conf) || conf.startsWith("dpi://")) return false
+        val parsed = try {
+            if (Plugins.forConf(host, conf) != null || Plugins.usesAwg(host, conf)) return false
+            Links.parse(Plugins.effectiveConf(host, conf))
+        } catch (e: Throwable) {
+            return false
+        }
+        return CorePlugins.pick(host, parsed.outbound) == null
+    }
+
     private fun systemColors(): JSONArray {
         val out = JSONArray()
         if (Build.VERSION.SDK_INT < 31) return out
@@ -564,6 +590,7 @@ class WebBridge(private val host: WebUiActivity) {
                     .put("proto", protoOf(s.conf))
                     .put("endpoint", s.endpoint)
                     .put("group", s.group)
+                    .put("hidden", hiddenFor(s.conf))
             )
         }
         o.put("servers", servers)

@@ -5,13 +5,13 @@ plugins {
 
 android {
     namespace = "app.fasdeq.vpn"
-    compileSdk = 35
-    buildToolsVersion = "35.0.0"
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 23
         versionName = (project.findProperty("app.vname") as String?) ?: "3.2"
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"

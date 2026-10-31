@@ -23,6 +23,7 @@ struct Conn {
     proc: xray::Proc,
     api: u16,
     bin: PathBuf,
+    tun: bool,
 }
 
 struct Update {
@@ -161,10 +162,19 @@ struct Item {
 }
 
 fn stop_conn(conn: Option<Conn>) {
+    let mut tun = false;
     if let Some(mut c) = conn {
+        tun = c.tun;
         c.proc.stop();
     }
-    xray::clear_system_proxy();
+    if !tun {
+        xray::clear_system_proxy();
+    }
+}
+
+fn desktop_has_proxy_settings() -> bool {
+    let d = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+    ["GNOME", "KDE", "CINNAMON", "MATE", "BUDGIE", "UNITY", "PANTHEON"].iter().any(|n| d.contains(n))
 }
 
 impl Host {
@@ -360,6 +370,7 @@ impl Host {
         });
         json!({
             "platform": "desktop",
+            "tun": cfg!(target_os = "linux") && xray::tun_possible(),
             "appVersion": VERSION,
             "status": match g.status { Status::Off => "Off", Status::Connecting => "Connecting", Status::On => "On", Status::Stopping => "Stopping" },
             "selected": s.selected,
@@ -476,7 +487,8 @@ impl Host {
             let mut g = self.inner.lock().unwrap();
             let conn = g.conn.take();
             let t = g.store.settings.tuning.clone();
-            let retry = t.reconnect && g.retries_left > 0;
+            let was_tun = conn.as_ref().map(|c| c.tun).unwrap_or(false);
+            let retry = t.reconnect && g.retries_left > 0 && !was_tun;
             if retry {
                 g.retries_left -= 1;
             }
@@ -618,9 +630,22 @@ impl Host {
         let http = xray::free_port();
         let api = xray::free_port();
         let cfg = links::inner_config(parsed.outbound, socks, http, Some(api), &dns);
+        let mode = self.inner.lock().unwrap().store.web["tunMode"].as_i64().unwrap_or(0);
+        let want_tun = cfg!(target_os = "linux")
+            && xray::tun_possible()
+            && match mode {
+                2 => true,
+                1 => false,
+                _ => !desktop_has_proxy_settings(),
+            };
+        #[cfg(target_os = "linux")]
+        if want_tun || mode == 2 {
+            let proc = xray::start_tun(&bin, cfg, socks)?;
+            return Ok(Conn { proc, api, bin, tun: true });
+        }
         let proc = xray::start(&bin, &cfg, socks)?;
         xray::set_system_proxy(http, socks);
-        Ok(Conn { proc, api, bin })
+        Ok(Conn { proc, api, bin, tun: false })
     }
 
     pub fn disconnect(self: &Arc<Self>) {

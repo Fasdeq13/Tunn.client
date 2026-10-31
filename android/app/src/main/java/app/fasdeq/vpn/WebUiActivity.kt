@@ -39,6 +39,7 @@ class WebUiActivity : ComponentActivity() {
     private lateinit var bridge: WebBridge
     private var topInset = 0
     private var bottomInset = 0
+    private var kbInset = 0
 
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
@@ -152,6 +153,7 @@ class WebUiActivity : ComponentActivity() {
             val density = resources.displayMetrics.density
             topInset = (bars.top / density).toInt()
             bottomInset = (bars.bottom / density).toInt()
+            kbInset = (insets.getInsets(WindowInsetsCompat.Type.ime()).bottom / density).toInt()
             applyInsets()
             insets
         }
@@ -227,7 +229,8 @@ class WebUiActivity : ComponentActivity() {
     private fun applyInsets() {
         runJs(
             "document.documentElement.style.setProperty('--safe-top','" + topInset + "px');" +
-                "document.documentElement.style.setProperty('--safe-bottom','" + bottomInset + "px');"
+                "document.documentElement.style.setProperty('--safe-bottom','" + bottomInset + "px');" +
+                "document.documentElement.style.setProperty('--kb','" + kbInset + "px');"
         )
     }
 
@@ -291,10 +294,7 @@ class WebUiActivity : ComponentActivity() {
         if (power.isIgnoringBatteryOptimizations(packageName)) return
         prefs.edit().putBoolean("asked_battery", true).apply()
         try {
-            batteryAsk.launch(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                    .setData(Uri.parse("package:$packageName"))
-            )
+            batteryAsk.launch(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         } catch (e: Exception) {
         }
     }

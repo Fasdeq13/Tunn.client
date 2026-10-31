@@ -231,9 +231,9 @@ input[type=range]:active::-webkit-slider-thumb { width: 2px; }
 #scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); opacity: 0; visibility: hidden; z-index: 20; transition: opacity calc(260ms * var(--k)) var(--ease), visibility 0s linear calc(260ms * var(--k)); }
 #scrim.show { opacity: 1; visibility: visible; transition-delay: 0s; }
 #sheet {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 21; max-height: 88%;
+  position: absolute; left: 0; right: 0; bottom: var(--kb, 0px); z-index: 21; max-height: min(88%, calc(100% - var(--kb, 0px) - var(--safe-top, 0px) - 12px));
   background: var(--sc-low); border-radius: 28px 28px 0 0; padding: 12px 20px calc(var(--safe-bottom, 0px) + 24px);
-  transform: translateY(105%); transition: transform calc(420ms * var(--k)) var(--ease-emph); overflow-y: auto; scrollbar-width: none;
+  transform: translateY(calc(105% + var(--kb, 0px))); transition: transform calc(420ms * var(--k)) var(--ease-emph), bottom calc(180ms * var(--k)) var(--ease); overflow-y: auto; scrollbar-width: none;
 }
 #sheet.show { transform: none; }
 #sheet .grab { width: 32px; height: 4px; border-radius: 2px; background: var(--outline); opacity: .6; margin: 0 auto 16px; }
@@ -557,3 +557,13 @@ body.no-motion .skel { animation: none; }
   #view-home { align-content: start; }
 }
 .hex.bad { border-color: var(--error, #ef5350); }
+
+.check-row { display: flex; align-items: center; gap: 12px; margin: 16px 0 6px; font-size: calc(14px * var(--ts)); cursor: pointer; }
+.chk { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--outline); background: transparent; display: grid; place-items: center; flex: none; transition: background calc(160ms * var(--k)) var(--ease), border-color calc(160ms * var(--k)) var(--ease); }
+.chk::after { content: ""; width: 10px; height: 6px; border-left: 2.5px solid var(--on-primary); border-bottom: 2.5px solid var(--on-primary); transform: rotate(-45deg) scale(0); margin-top: -2px; transition: transform calc(180ms * var(--k)) var(--ease-emph); }
+.chk:checked { background: var(--primary); border-color: var(--primary); }
+.chk:checked::after { transform: rotate(-45deg) scale(1); }
+
+.switch[disabled] { opacity: .4; pointer-events: none; }
+
+.dev.tg .tg-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary, #fff); flex: none; }

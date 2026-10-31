@@ -240,18 +240,42 @@ object Links {
 
     fun fetchMeta(url: String): Fetched {
         var last: Exception? = null
+        var tlsFailure = false
         for (m in Identity.order(url)) {
             try {
-                val r = fetchOnce(url, m)
+                val r = fetchOnce(url, m, false)
                 Identity.remember(url, m)
                 return r
+            } catch (e: javax.net.ssl.SSLException) {
+                last = e
+                tlsFailure = true
             } catch (e: java.io.IOException) {
                 last = e
             } catch (e: IllegalStateException) {
                 last = e
             }
+            if (tlsFailure) break
+        }
+        if (tlsFailure && url.startsWith("https", true)) {
+            for (m in Identity.order(url)) {
+                try {
+                    val r = fetchOnce(url, m, true)
+                    Identity.remember(url, m)
+                    return r
+                } catch (e: java.io.IOException) {
+                    last = e
+                } catch (e: IllegalStateException) {
+                    last = e
+                }
+            }
         }
         throw last ?: IllegalStateException("Не удалось загрузить")
+    }
+
+    private fun legacyTls(): javax.net.ssl.SSLSocketFactory {
+        val ctx = javax.net.ssl.SSLContext.getInstance("TLSv1.2")
+        ctx.init(null, null, null)
+        return ctx.socketFactory
     }
 
     private fun snippet(text: String): String {
@@ -270,8 +294,9 @@ object Links {
         return SubInfo((m["upload"] ?: 0L) + (m["download"] ?: 0L), m["total"] ?: 0L, m["expire"] ?: 0L)
     }
 
-    private fun fetchOnce(url: String, mask: Int): Fetched {
+    private fun fetchOnce(url: String, mask: Int, legacy: Boolean): Fetched {
         val c = URL(url).openConnection() as HttpURLConnection
+        if (legacy && c is javax.net.ssl.HttpsURLConnection) c.sslSocketFactory = legacyTls()
         c.connectTimeout = 10000
         c.readTimeout = 15000
         Identity.apply(c, mask)

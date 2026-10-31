@@ -310,6 +310,7 @@ pub fn free_port() -> u16 {
 pub struct Proc {
     child: Child,
     config: PathBuf,
+    stop_file: Option<PathBuf>,
 }
 
 impl Proc {
@@ -318,8 +319,20 @@ impl Proc {
     }
 
     pub fn stop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(f) = self.stop_file.take() {
+            let _ = std::fs::write(&f, b"1");
+            let end = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < end {
+                if matches!(self.child.try_wait(), Ok(Some(_))) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            let _ = std::fs::remove_file(&f);
+        } else {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
         let _ = std::fs::remove_file(&self.config);
     }
 }
@@ -358,6 +371,7 @@ pub fn start(bin: &Path, config: &Value, wait_port: u16) -> Result<Proc, String>
     let mut proc = Proc {
         child,
         config: path,
+        stop_file: None,
     };
     let end = Instant::now() + Duration::from_secs(10);
     loop {
@@ -571,4 +585,155 @@ pub fn clear_system_proxy() {
         }
     }
     let _ = output;
+}
+
+#[cfg(target_os = "linux")]
+const TUN_SCRIPT: &str = r#"
+XRAY="$1"; CFG="$2"; STOP="$3"; PARENT="$4"; ASSET="$5"
+DEV=fqtun0; TBL=20001
+alive() { [ -r "/proc/$1/stat" ] && ! grep -q ') Z' "/proc/$1/stat"; }
+D=$(mktemp -d /run/fasdeq.XXXXXX 2>/dev/null || mktemp -d) || exit 5
+chmod 700 "$D"
+cp "$XRAY" "$D/xray" && cp "$CFG" "$D/c.json" || exit 5
+chmod 700 "$D/xray"
+clean() {
+  for f in -4 -6; do
+    ip $f rule del priority 8980 2>/dev/null
+    ip $f rule del priority 8990 2>/dev/null
+    ip $f rule del priority 9000 2>/dev/null
+    ip $f route flush table $TBL 2>/dev/null
+  done
+  ip link del $DEV 2>/dev/null
+}
+XP=""
+fin() {
+  [ -n "$XP" ] && kill "$XP" 2>/dev/null
+  wait 2>/dev/null
+  clean
+  rm -rf "$D"
+}
+trap fin EXIT
+trap 'exit 0' INT TERM HUP
+clean
+XRAY_LOCATION_ASSET="$ASSET" "$D/xray" run -c "$D/c.json" &
+XP=$!
+i=0
+until ip link show $DEV >/dev/null 2>&1; do
+  i=$((i+1)); [ $i -gt 150 ] && exit 3
+  alive "$XP" || exit 4
+  sleep 0.1
+done
+ip addr add 172.19.0.1/30 dev $DEV || exit 6
+ip -6 addr add fdfe:dcba:9876::1/126 dev $DEV 2>/dev/null
+ip link set $DEV up
+ip route add default dev $DEV table $TBL || exit 6
+ip -6 route add default dev $DEV table $TBL 2>/dev/null
+for f in -4 -6; do
+  ip $f rule add priority 8980 fwmark 255 lookup main 2>/dev/null
+  ip $f rule add priority 8990 lookup main suppress_prefixlength 0 2>/dev/null
+  ip $f rule add priority 9000 lookup $TBL 2>/dev/null
+done
+while alive "$XP" && alive "$PARENT" && [ ! -e "$STOP" ]; do sleep 1; done
+exit 0
+"#;
+
+#[cfg(target_os = "linux")]
+pub fn tun_possible() -> bool {
+    which("pkexec").is_some() && Path::new("/dev/net/tun").exists()
+}
+
+#[cfg(target_os = "linux")]
+pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, String> {
+    let Some(pkexec) = which("pkexec") else {
+        return Err("Для TUN нужен pkexec (polkit). Установите polkit или выберите режим «Системный прокси»".into());
+    };
+    if !Path::new("/dev/net/tun").exists() {
+        return Err("Нет /dev/net/tun. Загрузите модуль: sudo modprobe tun".into());
+    }
+    if let Some(arr) = config["inbounds"].as_array_mut() {
+        arr.push(serde_json::json!({
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {"name": "fqtun0", "MTU": 1400},
+            "sniffing": {"enabled": true, "destOverride": ["http", "tls", "quic"]}
+        }));
+    }
+    if let Some(outs) = config["outbounds"].as_array_mut() {
+        for o in outs.iter_mut() {
+            let proto = o["protocol"].as_str().unwrap_or("").to_string();
+            if proto == "blackhole" || proto == "dns" {
+                continue;
+            }
+            let mut ss = o["streamSettings"].take();
+            if !ss.is_object() {
+                ss = serde_json::json!({});
+            }
+            ss["sockopt"]["mark"] = serde_json::json!(255);
+            o["streamSettings"] = ss;
+        }
+    }
+    let path = data_dir().join(format!("run-{}.json", wait_port));
+    std::fs::write(&path, config.to_string()).map_err(|e| e.to_string())?;
+    let stop = data_dir().join("tun.stop");
+    let _ = std::fs::remove_file(&stop);
+    let log = data_dir().join("tun.log");
+    let log_file = std::fs::File::create(&log).ok();
+    let mut cmd = Command::new(pkexec);
+    cmd.arg("/bin/sh")
+        .arg("-c")
+        .arg(TUN_SCRIPT)
+        .arg("fqtun")
+        .arg(bin)
+        .arg(&path)
+        .arg(&stop)
+        .arg(std::process::id().to_string())
+        .arg(bin.parent().map(|p| p.to_path_buf()).unwrap_or_default())
+        .stdin(Stdio::null())
+        .stdout(match log_file.as_ref().and_then(|f| f.try_clone().ok()) {
+            Some(f) => Stdio::from(f),
+            None => Stdio::null(),
+        })
+        .stderr(match log_file {
+            Some(f) => Stdio::from(f),
+            None => Stdio::null(),
+        });
+    let child = cmd.spawn().map_err(|e| format!("Не удалось запустить pkexec: {}", e))?;
+    let mut proc = Proc { child, config: path, stop_file: Some(stop) };
+    let end = Instant::now() + Duration::from_secs(120);
+    loop {
+        match proc.child.try_wait() {
+            Ok(Some(status)) => {
+                let text = std::fs::read_to_string(&log).unwrap_or_default();
+                let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
+                let hint = match status.code() {
+                    Some(126) => "Доступ отклонён или пароль не введён".to_string(),
+                    Some(127) => "Не найден polkit-агент для запроса пароля. Запустите hyprpolkitagent или polkit-gnome, либо выберите режим «Системный прокси»".to_string(),
+                    Some(3) | Some(4) | Some(6) => format!("Не удалось поднять TUN: {}", if last.is_empty() { "ядро не создало интерфейс" } else { &last }),
+                    _ => if last.is_empty() { "TUN не запустился".to_string() } else { last.clone() },
+                };
+                proc.stop_file = None;
+                let _ = std::fs::remove_file(&log);
+                return Err(hint);
+            }
+            Ok(None) => {}
+            Err(_) => {}
+        }
+        let rules = output("ip", &["rule", "show"]);
+        if rules.contains("20001")
+            && TcpStream::connect_timeout(&([127, 0, 0, 1], wait_port).into(), Duration::from_millis(150)).is_ok()
+        {
+            let _ = std::fs::remove_file(&log);
+            return Ok(proc);
+        }
+        if Instant::now() > end {
+            proc.stop();
+            return Err("TUN не запустился вовремя".into());
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn tun_possible() -> bool {
+    false
 }
