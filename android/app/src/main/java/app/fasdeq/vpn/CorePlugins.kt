@@ -9,6 +9,8 @@ object CorePlugins {
     const val XRAY = "xray"
     const val SINGBOX = "singbox"
     const val TUIC = "tuic"
+    const val WG = "wireguard"
+    const val AWG = "awg"
     const val DPI = "dpi"
     const val DPI_ID = "dpi-free"
     const val DPI_CONF = "dpi://free"
@@ -63,6 +65,12 @@ object CorePlugins {
         return null
     }
 
+    fun switchTo(c: Context, id: String) {
+        val e = prefs(c).edit().putBoolean("on_$id", true).putString("primary", id)
+        for (o in listOf(XRAY, SINGBOX)) if (o != id) e.putBoolean("on_$o", false)
+        e.apply()
+    }
+
     fun snapshot(c: Context): JSONObject {
         val out = JSONObject()
         val items = JSONArray()
@@ -73,8 +81,10 @@ object CorePlugins {
                     .put("primary", core && primary(c) == id)
             )
         }
-        add(XRAY, "Xray", "Основное ядро: VLESS, VMess, Trojan, Shadowsocks, WireGuard, XHTTP", true)
-        add(SINGBOX, "sing-box", "Второе ядро: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP и WireGuard", true)
+        add(XRAY, "Xray", "Основное ядро: VLESS, VMess, Trojan, Shadowsocks, XHTTP", true)
+        add(SINGBOX, "sing-box", "Второе ядро: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP", true)
+        add(WG, "WireGuard", "Отдельный плагин для WireGuard-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
+        add(AWG, "AmneziaWG", "Отдельный плагин для AmneziaWG-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)
         add(DPI, DPI_NAME, "Один общий сервер без выхода в сеть: обход DPI по принципу zapret и tg-ws-proxy", false)
         out.put("list", items)

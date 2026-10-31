@@ -567,3 +567,9 @@ body.no-motion .skel { animation: none; }
 .switch[disabled] { opacity: .4; pointer-events: none; }
 
 .dev.tg .tg-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary, #fff); flex: none; }
+
+.row.blocked { opacity: .55; }
+.row.blocked .s { color: var(--error); }
+.row.blocked .side { opacity: .4; }
+.dev.tg { text-decoration: none; color: inherit; cursor: pointer; }
+.dev .s.link { color: var(--primary); text-decoration: underline; }

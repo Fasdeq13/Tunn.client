@@ -163,8 +163,12 @@ class WebBridge(private val host: WebUiActivity) {
                 pushLater()
             }
             "select" -> {
-                app.select(text)
-                reply(id)
+                val target = app.servers.firstOrNull { it.id == text }
+                val why = if (target == null) null else blockedFor(target.conf)
+                if (why != null) reply(id, JSONObject().put("error", why)) else {
+                    app.select(text)
+                    reply(id)
+                }
             }
             "remove" -> {
                 app.servers.firstOrNull { it.id == text }?.let { app.remove(it) }
@@ -265,6 +269,7 @@ class WebBridge(private val host: WebUiActivity) {
                 when (o.getString("op")) {
                     "enable" -> CorePlugins.setEnabled(host, pid, o.getBoolean("value"))
                     "primary" -> CorePlugins.setPrimary(host, pid)
+                    "switch" -> CorePlugins.switchTo(host, pid)
                     "delete" -> CorePlugins.delete(host, pid)
                     "restore" -> {
                         host.lifecycleScope.launch {
@@ -515,30 +520,48 @@ class WebBridge(private val host: WebUiActivity) {
         }
     }
 
-    private val hideCache = HashMap<String, Boolean>()
-    private var hideSig = ""
+    private val blockCache = HashMap<String, String>()
+    private var blockSig = ""
 
-    private fun hiddenFor(conf: String): Boolean {
+    private fun blockedFor(conf: String): String? {
         val sig = listOf(
             CorePlugins.usable(host, CorePlugins.XRAY), CorePlugins.usable(host, CorePlugins.SINGBOX),
-            CorePlugins.usable(host, CorePlugins.TUIC), CorePlugins.primary(host), Plugins.stamp
+            CorePlugins.usable(host, CorePlugins.TUIC), CorePlugins.usable(host, CorePlugins.WG),
+            CorePlugins.usable(host, CorePlugins.AWG), CorePlugins.primary(host), Plugins.stamp
         ).toString()
-        if (sig != hideSig) {
-            hideCache.clear()
-            hideSig = sig
+        if (sig != blockSig) {
+            blockCache.clear()
+            blockSig = sig
         }
-        return hideCache.getOrPut(conf) { computeHidden(conf) }
+        return blockCache.getOrPut(conf) { computeBlocked(conf) ?: "" }.ifEmpty { null }
     }
 
-    private fun computeHidden(conf: String): Boolean {
-        if (Wg.isConf(conf) || conf.startsWith("dpi://")) return false
+    private fun computeBlocked(conf: String): String? {
+        if (conf.startsWith("dpi://")) return null
+        if (Wg.isConf(conf)) {
+            return when (Wg.kind(conf)) {
+                "awg" -> if (CorePlugins.usable(host, CorePlugins.AWG)) null else "Включите плагин AmneziaWG в настройках"
+                else -> if (CorePlugins.usable(host, CorePlugins.WG)) null else "Включите плагин WireGuard в настройках"
+            }
+        }
         val parsed = try {
-            if (Plugins.forConf(host, conf) != null || Plugins.usesAwg(host, conf)) return false
+            if (Plugins.forConf(host, conf) != null || Plugins.usesAwg(host, conf)) return null
             Links.parse(Plugins.effectiveConf(host, conf))
         } catch (e: Throwable) {
-            return false
+            return null
         }
-        return CorePlugins.pick(host, parsed.outbound) == null
+        if (CorePlugins.pick(host, parsed.outbound) != null) return null
+        if (parsed.outbound.optString("protocol") == "tuic") {
+            return if (!CorePlugins.present(host, CorePlugins.TUIC)) "В этой сборке нет ядра sing-box для TUIC"
+            else "Включите плагин TUIC в настройках"
+        }
+        val x = CorePlugins.usable(host, CorePlugins.XRAY)
+        val sb = CorePlugins.usable(host, CorePlugins.SINGBOX)
+        return when {
+            sb && !x -> "Ядро sing-box такое не поддерживает. Включите Xray в настройках"
+            !sb && !x -> "Включите ядро в настройках"
+            else -> "Не поддерживается включёнными ядрами"
+        }
     }
 
     private fun systemColors(): JSONArray {
@@ -590,7 +613,7 @@ class WebBridge(private val host: WebUiActivity) {
                     .put("proto", protoOf(s.conf))
                     .put("endpoint", s.endpoint)
                     .put("group", s.group)
-                    .put("hidden", hiddenFor(s.conf))
+                    .put("blocked", blockedFor(s.conf) ?: JSONObject.NULL)
             )
         }
         o.put("servers", servers)

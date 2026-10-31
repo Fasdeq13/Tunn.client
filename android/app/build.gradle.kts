@@ -28,6 +28,9 @@ android {
                 storePassword = project.property("ks.pass") as String
                 keyAlias = project.property("ks.alias") as String
                 keyPassword = project.property("ks.pass") as String
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }

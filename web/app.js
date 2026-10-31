@@ -425,6 +425,7 @@
   function bestServer() {
     let best = null, bestMs = 1e9;
     for (const x of S.servers) {
+      if (x.blocked) continue;
       const q = pingOf(x.id);
       if (q.ms > 0 && q.ms < bestMs) { bestMs = q.ms; best = x; }
     }
@@ -719,7 +720,7 @@
     const pingEl = h("span", { class: "ping" }, "—");
     const dotsEl = h("span", { class: "dots" }, [0, 1, 2].map(() => h("i", { class: "dot" })));
     side.append(pingEl, dotsEl);
-    const row = h("button", { class: "row", "data-sid": id, onclick: () => { Bridge.act("select", id); } },
+    const row = h("button", { class: "row", "data-sid": id, onclick: () => { const c = cur(); if (c.blocked) { snack(c.blocked); return; } Bridge.act("select", id); } },
       avatar,
       h("div", { class: "grow" }, t, sub),
       side,
@@ -730,13 +731,14 @@
   function paintRow(r, s) {
     const p = pingOf(s.id);
     const sel = s.id === S.selected;
-    const sig = s.name + "|" + s.proto + "|" + s.endpoint + "|" + sel + "|" + (p.busy ? "b" : p.ms) + "|" + JSON.stringify(checkOf(s.id));
+    const sig = (s.blocked || "") + "|" + s.name + "|" + s.proto + "|" + s.endpoint + "|" + sel + "|" + (p.busy ? "b" : p.ms) + "|" + JSON.stringify(checkOf(s.id));
     if (sig === r.sig) return;
     r.sig = sig;
     const pingSig = p.busy ? "b" : String(p.ms);
     const pingChanged = r.pingSig !== undefined && r.pingSig !== pingSig && !p.busy;
     r.pingSig = pingSig;
     r.el.classList.toggle("selected", sel);
+    r.el.classList.toggle("blocked", !!s.blocked);
     if (sel && r.wasSel === false) {
       r.el.classList.add("sel-pop");
       setTimeout(() => r.el.classList.remove("sel-pop"), 500);
@@ -744,7 +746,7 @@
     r.wasSel = sel;
     r.avatar.textContent = Array.from(s.name)[0].toUpperCase();
     r.t.textContent = s.name;
-    r.sub.textContent = s.proto + " · " + s.endpoint;
+    r.sub.textContent = s.blocked ? s.blocked : s.proto + " · " + s.endpoint;
     const pe = r.pingEl;
     const txt = p.busy ? "…" : p.ms == null || p.ms <= 0 ? "—" : p.ms + " мс";
     if (pe.textContent !== txt) pe.textContent = txt;
@@ -988,29 +990,24 @@
   }
   const coreSw = {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let coreBusyUi = false;
   async function toggleCore(p, cores) {
     const other = cores.find((x) => x.id !== p.id && x.present);
     const act = (id, op, value) => Bridge.act("corePlugin", { id, op, value });
     if (!p.core) { await act(p.id, "enable", !p.enabled); return; }
-    if (!p.enabled) {
-      const off = other && other.enabled ? other : null;
-      if (coreSw[p.id]) coreSw[p.id].classList.add("on");
-      if (off) setTimeout(() => { if (coreSw[off.id]) coreSw[off.id].classList.remove("on"); }, 220);
-      await sleep(off ? 480 : 260);
-      await act(p.id, "enable", true);
-      await act(p.id, "primary");
-      if (off) await act(off.id, "enable", false);
-      snack(p.name + " включён" + (off ? ", " + off.name + " выключен" : ""));
-    } else {
+    if (coreBusyUi) return;
+    let to = p, from = null;
+    if (p.enabled) {
       if (!other) { snack("Нужно хотя бы одно ядро"); return; }
-      if (coreSw[p.id]) coreSw[p.id].classList.remove("on");
-      setTimeout(() => { if (coreSw[other.id]) coreSw[other.id].classList.add("on"); }, 220);
-      await sleep(480);
-      await act(other.id, "enable", true);
-      await act(other.id, "primary");
-      await act(p.id, "enable", false);
-      snack(other.name + " включён, " + p.name + " выключен");
-    }
+      to = other; from = p;
+    } else if (other && other.enabled) from = other;
+    coreBusyUi = true;
+    if (coreSw[to.id]) coreSw[to.id].classList.add("on");
+    if (from && coreSw[from.id]) coreSw[from.id].classList.remove("on");
+    await sleep(360);
+    await act(to.id, "switch");
+    coreBusyUi = false;
+    snack(to.name + " включён" + (from ? ", " + from.name + " выключен" : ""));
   }
   function corePluginRows() {
     const CP = S.corePlugins || { list: [], dpi: {} };
@@ -1519,8 +1516,9 @@
     const tgLink = () => {
       const ic = h("span", { class: "tg-ic" });
       ic.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M21.6 3.4 2.7 10.7c-.9.4-.9 1 0 1.3l4.8 1.5 1.8 5.6c.2.6.4.8.9.8s.6-.2.9-.5l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3-14.3c.3-1.2-.4-1.8-1.2-1.2zM8.5 13.2l9.1-5.7c.4-.3.8-.1.5.2l-7.5 6.8-.3 3.1z"/></svg>';
-      return h("button", { class: "dev tg", onclick: () => Bridge.act("open", "https://t.me/Tunn_client") }, ic,
-        h("div", { class: "grow" }, h("div", { class: "t" }, "Tunn в Telegram"), h("div", { class: "s" }, "t.me/Tunn_client")));
+      const a = h("a", { class: "dev tg", href: "https://t.me/Tunn_client", target: "_blank", rel: "noopener", onclick: (e) => { e.preventDefault(); Bridge.act("open", "https://t.me/Tunn_client"); } }, ic,
+        h("div", { class: "grow" }, h("div", { class: "t" }, "Tunn в Telegram"), h("div", { class: "s link" }, "t.me/Tunn_client")));
+      return a;
     };
     const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
@@ -1583,10 +1581,12 @@
     const first = !S || !S.__ready;
     next.settings = merge(DEFAULTS, next.settings || {});
     applyPend(next.settings);
-    next.servers = (next.servers || []).filter((x) => !x.hidden);
-    if (next.selected && !next.servers.some((x) => x.id === next.selected) && next.servers.length && !pickingFirst) {
+    next.servers = next.servers || [];
+    const okSrv = next.servers.filter((x) => !x.blocked);
+    const selSrv = next.servers.find((x) => x.id === next.selected);
+    if (next.selected && (!selSrv || selSrv.blocked) && okSrv.length && !pickingFirst) {
       pickingFirst = true;
-      next.selected = next.servers[0].id;
+      next.selected = okSrv[0].id;
       Bridge.act("select", next.selected).then(() => setTimeout(() => { pickingFirst = false; }, 600));
     }
     next.services = next.services || { names: ["Discord", "Telegram", "YouTube"], checking: false, checks: {}, best: [] };
