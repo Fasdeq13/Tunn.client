@@ -144,6 +144,8 @@ class AppState(private val app: Application) {
     var coreBusy by mutableStateOf<String?>(null)
         private set
     var releases by mutableStateOf<List<Release>?>(null)
+    var sbReleases by mutableStateOf<List<Release>?>(null)
+    val sbCores = mutableStateListOf<CoreInfo>()
         private set
     var status by mutableStateOf(Status.Off)
         private set
@@ -178,6 +180,7 @@ class AppState(private val app: Application) {
         if (servers.none { it.id == selectedId }) selectedId = servers.firstOrNull()?.id
         if (SharedStore.read(app) == null) save() else reloadShared()
         refreshCores()
+        refreshSb()
         scope.launch { builtinVersion = withContext(Dispatchers.IO) { Cores.builtinVersion() } }
         if (autoPing) {
             scope.launch {
@@ -835,6 +838,46 @@ class AppState(private val app: Application) {
         }
     }
 
+    fun refreshSb() {
+        sbCores.clear()
+        sbCores.addAll(SbCores.list(app))
+    }
+
+    suspend fun loadSbReleases(): String? {
+        coreBusy = "Загружаю список версий sing-box…"
+        return try {
+            sbReleases = withContext(Dispatchers.IO) { SbCores.releases() }
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Не удалось получить список версий"
+        } finally {
+            coreBusy = null
+        }
+    }
+
+    suspend fun downloadSb(release: Release): String? {
+        coreBusy = "Скачиваю sing-box ${release.tag}…"
+        return try {
+            val info = withContext(Dispatchers.IO) { SbCores.install(app, Cores.download(release.url), "sing-box ${release.tag}") }
+            refreshSb()
+            SbCores.setActive(app, info.id)
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Не удалось скачать ядро"
+        } finally {
+            coreBusy = null
+        }
+    }
+
+    fun deleteSb(id: String) {
+        SbCores.delete(app, id)
+        refreshSb()
+    }
+
     suspend fun loadReleases(): String? {
         coreBusy = "Загружаю список версий…"
         return try {
@@ -999,8 +1042,8 @@ class AppState(private val app: Application) {
         var engine = CorePlugins.XRAY
         val outbound = if (dpi || plugin != null || awg) "{}" else try {
             val parsed = Links.parse(Plugins.effectiveConf(app, target.conf)).outbound
-            engine = CorePlugins.pick(app, parsed) ?: run {
-                error = if (parsed.optString("protocol") == "tuic") "Для TUIC включите плагин TUIC (нужно ядро sing-box)" else "Ядро не найдено. Включите ядро в Настройки, Плагины"
+            engine = CorePlugins.pick(app, parsed, CorePlugins.serverCore(app, target.id)) ?: run {
+                error = if (parsed.optString("protocol") == "tuic") "Для TUIC включите плагин TUIC (нужно ядро sing-box)" else if (CorePlugins.serverCore(app, target.id) == CorePlugins.SINGBOX) "Ядро sing-box такое не поддерживает. Смените ядро сервера" else "Ядро не найдено. Включите ядро в Настройки, Плагины"
                 return
             }
             parsed.toString()
@@ -1015,7 +1058,7 @@ class AppState(private val app: Application) {
         val intent = Intent(app, FasdeqVpnService::class.java)
             .setAction(FasdeqVpnService.ACTION_START)
             .putExtra(FasdeqVpnService.EXTRA_OUTBOUND, outbound)
-            .putExtra(FasdeqVpnService.EXTRA_CORE, Cores.activePath(app) ?: "")
+            .putExtra(FasdeqVpnService.EXTRA_CORE, CorePlugins.corePath(app, engine, target.id))
             .putExtra(FasdeqVpnService.EXTRA_DNS, dnsList().joinToString(","))
             .putExtra(FasdeqVpnService.EXTRA_MTU, mtu)
             .putExtra(FasdeqVpnService.EXTRA_TUNING, tuning.toJson())

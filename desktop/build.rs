@@ -3,8 +3,8 @@ fn main() {
     if target == "windows" {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/app.ico");
-        res.set("ProductName", "FasdeqVPN");
-        res.set("FileDescription", "FasdeqVPN");
+        res.set("ProductName", "Tunn");
+        res.set("FileDescription", "Tunn");
         let _ = res.compile();
     }
 }

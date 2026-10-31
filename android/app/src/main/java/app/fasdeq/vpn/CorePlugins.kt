@@ -18,11 +18,33 @@ object CorePlugins {
 
     private fun prefs(c: Context) = c.getSharedPreferences("core_plugins", Context.MODE_PRIVATE)
 
-    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", id != SINGBOX && id != TUIC)
+    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", id != TUIC)
 
     fun deleted(c: Context, id: String): Boolean = prefs(c).getBoolean("del_$id", false)
 
-    fun primary(c: Context): String = prefs(c).getString("primary", XRAY) ?: XRAY
+    fun primary(c: Context): String = prefs(c).getString("primary", SINGBOX) ?: SINGBOX
+
+    fun fallback(c: Context): Boolean = prefs(c).getBoolean("xray_fallback", true)
+
+    fun setFallback(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("xray_fallback", v).apply()
+    }
+
+    fun serverCore(c: Context, id: String): String = prefs(c).getString("srv_$id", "") ?: ""
+
+    fun serverVer(c: Context, id: String): String = prefs(c).getString("srvver_$id", "") ?: ""
+
+    fun setServer(c: Context, id: String, core: String, ver: String) {
+        prefs(c).edit().putString("srv_$id", core).putString("srvver_$id", ver).apply()
+    }
+
+    fun corePath(c: Context, engine: String, serverId: String): String {
+        val ver = serverVer(c, serverId)
+        if (engine == SINGBOX) {
+            return SbCores.pathOf(c, ver.ifEmpty { SbCores.active(c) }) ?: ""
+        }
+        return Cores.pathOf(c, ver.ifEmpty { Cores.active(c) }) ?: ""
+    }
 
     fun setEnabled(c: Context, id: String, value: Boolean) {
         prefs(c).edit().putBoolean("on_$id", value).apply()
@@ -54,21 +76,16 @@ object CorePlugins {
 
     fun usable(c: Context, id: String): Boolean = present(c, id) && enabled(c, id)
 
-    fun pick(c: Context, outbound: JSONObject): String? {
-        if (outbound.optString("protocol") == "tuic") return if (usable(c, TUIC)) SINGBOX else null
-        val order = listOf(primary(c), XRAY, SINGBOX).distinct()
-        for (id in order) {
-            if (!usable(c, id)) continue
-            if (id == SINGBOX && !SingBox.supports(outbound)) continue
-            return id
-        }
+    fun pick(c: Context, outbound: JSONObject, override: String = ""): String? {
+        if (outbound.optString("protocol") == "tuic") return if (usable(c, TUIC) && usable(c, SINGBOX)) SINGBOX else null
+        val sbOk = usable(c, SINGBOX) && SingBox.supports(outbound)
+        val xOk = usable(c, XRAY)
+        if (override == SINGBOX) return if (sbOk) SINGBOX else null
+        if (override == XRAY) return if (xOk) XRAY else null
+        if (primary(c) == XRAY) return if (xOk) XRAY else if (sbOk) SINGBOX else null
+        if (sbOk) return SINGBOX
+        if (xOk && (fallback(c) || !usable(c, SINGBOX))) return XRAY
         return null
-    }
-
-    fun switchTo(c: Context, id: String) {
-        val e = prefs(c).edit().putBoolean("on_$id", true).putString("primary", id)
-        for (o in listOf(XRAY, SINGBOX)) if (o != id) e.putBoolean("on_$o", false)
-        e.apply()
     }
 
     fun snapshot(c: Context): JSONObject {
@@ -81,8 +98,8 @@ object CorePlugins {
                     .put("primary", core && primary(c) == id)
             )
         }
-        add(XRAY, "Xray", "Основное ядро: VLESS, VMess, Trojan, Shadowsocks, XHTTP", true)
-        add(SINGBOX, "sing-box", "Второе ядро: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP", true)
+        add(SINGBOX, "sing-box", "Основное ядро по умолчанию: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP", true)
+        add(XRAY, "Xray", "Подхватывает то, что не поддерживает sing-box (например XHTTP)", true)
         add(WG, "WireGuard", "Отдельный плагин для WireGuard-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(AWG, "AmneziaWG", "Отдельный плагин для AmneziaWG-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)

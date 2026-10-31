@@ -3,6 +3,7 @@
 mod conflict;
 mod host;
 mod server;
+mod singbox;
 mod store;
 mod tray;
 mod xray;
@@ -25,17 +26,17 @@ fn install_desktop_entry() {
     let apps = home.join(".local/share/applications");
     let _ = std::fs::create_dir_all(&icons);
     let _ = std::fs::create_dir_all(&apps);
-    let icon = icons.join("FasdeqVPN.png");
+    let icon = icons.join("Tunn.png");
     let png = tray::png(256);
     if std::fs::read(&icon).map(|c| c != png).unwrap_or(true) {
         let _ = std::fs::write(&icon, &png);
     }
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=FasdeqVPN\nExec=\"{}\"\nIcon={}\nCategories=Network;\nTerminal=false\nStartupWMClass=fasdeqvpn\n",
+        "[Desktop Entry]\nType=Application\nName=Tunn\nExec=\"{}\"\nIcon={}\nCategories=Network;\nTerminal=false\nStartupWMClass=tunn\n",
         exec,
         icon.display()
     );
-    let path = apps.join("FasdeqVPN.desktop");
+    let path = apps.join("Tunn.desktop");
     if std::fs::read_to_string(&path).map(|c| c != entry).unwrap_or(true) {
         let _ = std::fs::write(&path, entry);
         let _ = std::process::Command::new("update-desktop-database").arg(&apps).status();
@@ -157,7 +158,7 @@ fn main() {
     });
 
     let window = WindowBuilder::new()
-        .with_title("FasdeqVPN")
+        .with_title("Tunn")
         .with_inner_size(tao::dpi::LogicalSize::new(1100.0, 760.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(360.0, 560.0))
         .with_window_icon(window_icon())

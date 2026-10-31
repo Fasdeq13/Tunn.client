@@ -573,3 +573,17 @@ body.no-motion .skel { animation: none; }
 .row.blocked .side { opacity: .4; }
 .dev.tg { text-decoration: none; color: inherit; cursor: pointer; }
 .dev .s.link { color: var(--primary); text-decoration: underline; }
+
+.peek-gear { margin-top: 14px; width: 100%; justify-content: center; }
+.msg.bad { color: var(--error); }
+
+html, body { transition: background-color calc(500ms * var(--k, 1)) var(--ease, ease); }
+#app::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(120% 55% at 50% -5%, color-mix(in oklab, var(--primary) 16%, transparent), transparent 72%),
+    radial-gradient(90% 45% at 100% 105%, color-mix(in oklab, var(--tertiary) 11%, transparent), transparent 72%);
+  transition: opacity calc(500ms * var(--k, 1)) var(--ease, ease);
+}
+body.light #app::before { opacity: .55; }
+body.amoled #app::before { opacity: .45; }

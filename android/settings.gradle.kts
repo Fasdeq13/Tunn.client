@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FasdeqVPN"
+rootProject.name = "Tunn"
 include(":app")

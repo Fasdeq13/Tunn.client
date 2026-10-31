@@ -104,7 +104,7 @@ fn handle(host: Arc<Host>, port: u16, mut rq: Request) {
         }
     }
     if !cookie_ok(&rq, &host.token) {
-        let _ = rq.respond(Response::from_string("FasdeqVPN").with_status_code(403));
+        let _ = rq.respond(Response::from_string("Tunn").with_status_code(403));
         return;
     }
     match (&method, path.as_str()) {

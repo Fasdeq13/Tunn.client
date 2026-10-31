@@ -1,11 +1,11 @@
 [package]
-name = "fasdeqvpn"
-version = "3.2.0"
+name = "tunn"
+version = "3.3.0"
 edition = "2021"
-description = "FasdeqVPN"
+description = "Tunn"
 
 [[bin]]
-name = "fasdeqvpn"
+name = "tunn"
 path = "src/main.rs"
 
 [dependencies]
@@ -16,6 +16,8 @@ ureq = { version = "3", features = ["socks-proxy"] }
 resvg = "0.45"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 rand = "0.9"
+flate2 = "1"
+tar = "0.4"
 tiny_http = "0.12"
 directories = "6"
 tao = "0.34"

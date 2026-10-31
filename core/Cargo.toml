@@ -1,8 +1,8 @@
 [package]
 name = "fasdeq-core"
-version = "3.2.0"
+version = "3.3.0"
 edition = "2021"
-description = "FasdeqVPN shared core"
+description = "Tunn shared core"
 
 [lib]
 name = "fasdeq_core"

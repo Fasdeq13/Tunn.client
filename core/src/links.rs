@@ -186,7 +186,7 @@ pub fn fetch_meta(url: &str) -> Res<Fetched> {
         .into();
     let mut resp = agent
         .get(url)
-        .header("User-Agent", "FasdeqVPN/1.0")
+        .header("User-Agent", "Tunn/1.0")
         .call()
         .map_err(|e| e.to_string())?;
     let code = resp.status().as_u16();

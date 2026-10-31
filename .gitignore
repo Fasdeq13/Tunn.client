@@ -1,0 +1,9 @@
+android/app/src/main/assets/
+android/app/src/main/jniLibs/
+android/app/libs/
+android/local.properties
+android/.gradle/
+android/app/build/
+.fqbuild/
+dist/
+target/

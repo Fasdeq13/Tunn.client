@@ -73,7 +73,7 @@ pub fn delete(id: &str) {
     let _ = std::fs::remove_dir_all(cores_root().join(id));
 }
 
-fn which(name: &str) -> Option<PathBuf> {
+pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|p| p.join(name))
@@ -246,7 +246,7 @@ fn http(url: &str, limit: u64) -> Result<Vec<u8>, String> {
         .into();
     let mut resp = agent
         .get(url)
-        .header("User-Agent", "FasdeqVPN/1.4")
+        .header("User-Agent", "Tunn/1.4")
         .header("Accept", "application/vnd.github+json")
         .call()
         .map_err(|e| e.to_string())?;
@@ -314,6 +314,18 @@ pub struct Proc {
 }
 
 impl Proc {
+    pub fn new(child: Child, config: PathBuf, stop_file: Option<PathBuf>) -> Proc {
+        Proc { child, config, stop_file }
+    }
+
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        self.child.try_wait()
+    }
+
+    pub fn forget_stop(&mut self) {
+        self.stop_file = None;
+    }
+
     pub fn alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
@@ -443,7 +455,7 @@ fn probe(port: u16, url: &str, timeout: u64) -> i32 {
         .build()
         .into();
     let t0 = Instant::now();
-    match agent.get(url).header("User-Agent", "FasdeqVPN/1.4").call() {
+    match agent.get(url).header("User-Agent", "Tunn/1.4").call() {
         Ok(_) => (t0.elapsed().as_millis() as i32).max(1),
         Err(_) => -1,
     }

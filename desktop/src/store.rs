@@ -22,9 +22,19 @@ pub struct Store {
 }
 
 pub fn data_dir() -> PathBuf {
-    let dir = directories::ProjectDirs::from("app", "fasdeq", "FasdeqVPN")
+    let dir = directories::ProjectDirs::from("app", "fasdeq", "Tunn")
         .map(|d| d.data_dir().to_path_buf())
-        .unwrap_or_else(|| std::env::temp_dir().join("FasdeqVPN"));
+        .unwrap_or_else(|| std::env::temp_dir().join("Tunn"));
+    if !dir.exists() {
+        if let Some(old) = directories::ProjectDirs::from("app", "fasdeq", "FasdeqVPN").map(|d| d.data_dir().to_path_buf()) {
+            if old.exists() {
+                if let Some(parent) = dir.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::rename(&old, &dir);
+            }
+        }
+    }
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

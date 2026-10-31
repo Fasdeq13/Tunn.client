@@ -326,7 +326,7 @@ class FasdeqVpnService : VpnService() {
                         val port = DpiProxy.start(this)
                         config = Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
                     } else if (params.engine == CorePlugins.SINGBOX) {
-                        val port = startChild(CorePlugins.singboxFile(this).absolutePath, outbound, true)
+                        val port = startChild(if (params.core.isNotEmpty() && File(params.core).exists()) params.core else CorePlugins.singboxFile(this).absolutePath, outbound, true)
                         config = Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
                     } else if (params.core.isNotEmpty() && File(params.core).exists()) {
                         val port = startChild(params.core, outbound)

@@ -1,6 +1,7 @@
 use crate::conflict::{self, Found};
 use crate::model::*;
 use crate::store::{now_millis, Store};
+use crate::singbox;
 use crate::xray::{self, Release};
 use crate::{importer, links, ping};
 use serde_json::{json, Map, Value};
@@ -10,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-pub const VERSION: &str = "3.2";
+pub const VERSION: &str = "3.3";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiCmd {
@@ -24,6 +25,7 @@ struct Conn {
     api: u16,
     bin: PathBuf,
     tun: bool,
+    sb: bool,
 }
 
 struct Update {
@@ -330,7 +332,7 @@ impl Host {
         let servers: Vec<Value> = s
             .servers
             .iter()
-            .map(|x| json!({"id": x.id, "name": x.name, "proto": proto_of(&x.conf), "endpoint": x.endpoint, "group": x.group}))
+            .map(|x| json!({"id": x.id, "name": x.name, "proto": proto_of(&x.conf), "endpoint": x.endpoint, "group": x.group, "blocked": Host::block_note(&s.web, &x.conf)}))
             .collect();
         let groups: Vec<Value> = s
             .groups
@@ -451,7 +453,7 @@ impl Host {
                 match g.conn.as_mut() {
                     Some(c) => {
                         let alive = c.proc.alive();
-                        Some((alive, c.bin.clone(), c.api))
+                        Some((alive, c.bin.clone(), if c.sb { 0 } else { c.api }))
                     }
                     None => None,
                 }
@@ -461,7 +463,7 @@ impl Host {
                     self.lost();
                     return;
                 }
-                let stats = xray::query_stats(&bin, api);
+                let stats = if api == 0 { None } else { xray::query_stats(&bin, api) };
                 {
                     let mut g = self.inner.lock().unwrap();
                     if let Some((d, u)) = stats {
@@ -621,15 +623,54 @@ impl Host {
         json!({})
     }
 
+    fn block_note(web: &Value, conf: &str) -> Value {
+        let fallback = web["xrayFallback"].as_bool().unwrap_or(true);
+        let xray_first = web["engine"].as_i64().unwrap_or(0) == 1;
+        if xray_first || fallback {
+            return Value::Null;
+        }
+        match links::parse(conf) {
+            Ok(p) if !singbox::supports(&p.outbound) => json!("Ядро sing-box такое не поддерживает. Включите Xray для неподдерживаемых в настройках"),
+            _ => Value::Null,
+        }
+    }
+
+    fn web_flag(&self, key: &str, default: bool) -> bool {
+        self.inner.lock().unwrap().store.web[key].as_bool().unwrap_or(default)
+    }
+
+    fn engine_for(&self, outbound: &serde_json::Value) -> Result<bool, String> {
+        let prefer_xray = self.inner.lock().unwrap().store.web["engine"].as_i64().unwrap_or(0) == 1;
+        let fallback = self.web_flag("xrayFallback", true);
+        if outbound["protocol"].as_str() == Some("tuic") {
+            return Ok(true);
+        }
+        if prefer_xray {
+            return Ok(false);
+        }
+        if singbox::supports(outbound) {
+            return Ok(true);
+        }
+        if fallback {
+            return Ok(false);
+        }
+        Err("Ядро sing-box такое не поддерживает. Включите «Xray для неподдерживаемых серверов» в настройках".to_string())
+    }
+
+    fn ensure_singbox(&self) -> Result<PathBuf, String> {
+        if let Some(b) = singbox::find_binary() {
+            return Ok(b);
+        }
+        self.set_core_busy(Some("Скачиваю ядро sing-box…".into()));
+        let r = singbox::download_latest();
+        self.set_core_busy(None);
+        r.map_err(|e| format!("Не удалось скачать sing-box: {}", e))
+    }
+
     fn start_conn(&self, server: &Server) -> Result<Conn, String> {
-        let bin = self.ensure_core()?;
-        let dns = self.inner.lock().unwrap().store.settings.dns_list();
         let mut parsed = links::parse(&server.conf)?;
         links::resolve(&mut parsed.outbound);
-        let socks = xray::free_port();
-        let http = xray::free_port();
-        let api = xray::free_port();
-        let cfg = links::inner_config(parsed.outbound, socks, http, Some(api), &dns);
+        let use_sb = self.engine_for(&parsed.outbound)?;
         let mode = self.inner.lock().unwrap().store.web["tunMode"].as_i64().unwrap_or(0);
         let want_tun = cfg!(target_os = "linux")
             && xray::tun_possible()
@@ -638,14 +679,34 @@ impl Host {
                 1 => false,
                 _ => !desktop_has_proxy_settings(),
             };
+        if use_sb {
+            let bin = self.ensure_singbox()?;
+            let port = xray::free_port();
+            #[cfg(target_os = "linux")]
+            if want_tun || mode == 2 {
+                let cfg = singbox::build_config(&parsed.outbound, port, true)?;
+                let proc = singbox::start_tun(&bin, &cfg, port)?;
+                return Ok(Conn { proc, api: 0, bin, tun: true, sb: true });
+            }
+            let cfg = singbox::build_config(&parsed.outbound, port, false)?;
+            let proc = singbox::start(&bin, &cfg, port)?;
+            xray::set_system_proxy(port, port);
+            return Ok(Conn { proc, api: 0, bin, tun: false, sb: true });
+        }
+        let bin = self.ensure_core()?;
+        let dns = self.inner.lock().unwrap().store.settings.dns_list();
+        let socks = xray::free_port();
+        let http = xray::free_port();
+        let api = xray::free_port();
+        let cfg = links::inner_config(parsed.outbound, socks, http, Some(api), &dns);
         #[cfg(target_os = "linux")]
         if want_tun || mode == 2 {
             let proc = xray::start_tun(&bin, cfg, socks)?;
-            return Ok(Conn { proc, api, bin, tun: true });
+            return Ok(Conn { proc, api, bin, tun: true, sb: false });
         }
         let proc = xray::start(&bin, &cfg, socks)?;
         xray::set_system_proxy(http, socks);
-        Ok(Conn { proc, api, bin, tun: false })
+        Ok(Conn { proc, api, bin, tun: false, sb: false })
     }
 
     pub fn disconnect(self: &Arc<Self>) {
@@ -1025,7 +1086,7 @@ impl Host {
                 .into();
             let mut resp = agent
                 .get("https://api.github.com/repos/Fasdeq13/FasdeqVPN/releases/latest")
-                .header("User-Agent", "FasdeqVPN")
+                .header("User-Agent", "Tunn")
                 .call()
                 .map_err(|e| e.to_string())?;
             if resp.status().as_u16() != 200 {
@@ -1394,7 +1455,7 @@ pub fn open_url(url: &str) {
 pub fn set_autostart(enable: bool) {
     let Ok(exe) = std::env::current_exe() else { return };
     let Some(path) = exe.to_str() else { return };
-    if let Ok(auto) = auto_launch::AutoLaunchBuilder::new().set_app_name("FasdeqVPN").set_app_path(path).build() {
+    if let Ok(auto) = auto_launch::AutoLaunchBuilder::new().set_app_name("Tunn").set_app_path(path).build() {
         if enable {
             let _ = auto.enable();
         } else {

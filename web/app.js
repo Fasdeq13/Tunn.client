@@ -81,7 +81,7 @@
     anim: { all: true, pages: true, controls: true, sheets: true, enabled: true, speed: 1, intensity: 1, tempo: 1, burst: true, waves: 3, idle: true, iconFx: true, press: true, haptics: true, ripple: true, list: true, fold: true, cards: true, pingFx: true, select: true, glow: 1 },
     look: { style: 0, contrast: 0, tintLevel: 1, secHue: 0, terHue: 60, radius: 1, density: 1 },
     button: { size: 224, lobes: 10, shape: 0 },
-    textScale: 1, autoCheck: false, mask: 1, checkInterval: 60, updates: { auto: true },
+    textScale: 1, autoCheck: false, xrayFallback: true, engine: 0, mask: 1, checkInterval: 60, updates: { auto: true },
     autoConnect: false, dns: 0, dnsCustom: "", mtu: 1500,
     pingMode: 0, pingTimeout: 1, autoPing: false, sortPing: true,
     tuning: { ipv6: true, log: 2, sniff: false, lan: false, quic: false, ds: 0, am: 0, apps: "", unm: false, idle: 300, buf: 0, mux: false, muxc: 8 },
@@ -176,7 +176,7 @@
     const grey = C < 0.025 || styleI === 4;
     const ct = clamp(Math.round(lk.contrast) || 0, 0, 2);
     const tintMul = [1, 1.8, 1.4, 0.35, 0][styleI] * clamp(Number(lk.tintLevel), 0, 2);
-    const tc = grey ? 0 : (st.tint ? clamp(C * 0.1, 0.004, 0.022) : 0.004) * tintMul;
+    const tc = grey ? 0 : (st.tint ? clamp(C * 0.2, 0.01, 0.04) : 0.004) * tintMul;
     const pc = [30, 42, 36, 18, 12][styleI];
     const sc = [16, 22, 20, 8, 6][styleI];
     const secH = (H + (Number(lk.secHue) || 0) + (styleI === 2 ? 40 : 0) + 360) % 360;
@@ -575,6 +575,10 @@
     const card = h("div", { class: "peek" },
       h("div", { class: "peek-t" }, info.title),
       info.sub.map((x, i) => h("div", { class: "peek-s", style: "--d:" + (120 + i * 60) + "ms" }, x)));
+    if (el.dataset && el.dataset.sid && !DESK_NO_CORE()) {
+      const sid = el.dataset.sid;
+      card.append(h("button", { class: "btn tonal peek-gear", onclick: () => { closePeek(); setTimeout(() => serverSheet(sid), 200); } }, icon("gear"), "Ядро и версия"));
+    }
     $("#app").append(scrim, card);
     const w = Math.min(app.width - 32, 520);
     const left = (app.width - w) / 2;
@@ -990,24 +994,13 @@
   }
   const coreSw = {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let coreBusyUi = false;
   async function toggleCore(p, cores) {
-    const other = cores.find((x) => x.id !== p.id && x.present);
     const act = (id, op, value) => Bridge.act("corePlugin", { id, op, value });
-    if (!p.core) { await act(p.id, "enable", !p.enabled); return; }
-    if (coreBusyUi) return;
-    let to = p, from = null;
-    if (p.enabled) {
-      if (!other) { snack("Нужно хотя бы одно ядро"); return; }
-      to = other; from = p;
-    } else if (other && other.enabled) from = other;
-    coreBusyUi = true;
-    if (coreSw[to.id]) coreSw[to.id].classList.add("on");
-    if (from && coreSw[from.id]) coreSw[from.id].classList.remove("on");
-    await sleep(360);
-    await act(to.id, "switch");
-    coreBusyUi = false;
-    snack(to.name + " включён" + (from ? ", " + from.name + " выключен" : ""));
+    if (p.core && p.enabled && !cores.some((x) => x.id !== p.id && x.present && x.enabled)) { snack("Нужно хотя бы одно ядро"); return; }
+    const on = !p.enabled;
+    if (coreSw[p.id]) coreSw[p.id].classList.toggle("on", on);
+    await sleep(220);
+    await act(p.id, "enable", on);
   }
   function corePluginRows() {
     const CP = S.corePlugins || { list: [], dpi: {} };
@@ -1119,6 +1112,51 @@
     });
   }
 
+  const DESK_NO_CORE = () => !(S && S.sbCores);
+  const sbUi = { rel: false, msg: "" };
+  function serverSheet(sid) {
+    sbUi.msg = "";
+    openLive(() => {
+      const s = S.servers.find((x) => x.id === sid);
+      if (!s) { return h("div", {}, h("h2", {}, "Сервер удалён")); }
+      const C = S.cores, B = S.sbCores;
+      const busy = !!C.busy;
+      const set = (core, ver) => Bridge.act("corePlugin", { id: sid, op: "server", core, ver });
+      const eng = s.core || "";
+      const engBtn = (v, label) => h("button", { class: "btn " + (eng === v ? "filled" : "tonal"), onclick: () => set(v, "") }, label);
+      const row = (selected, title, sub, onTap, onDel) => h("button", { class: "row" + (selected ? " selected" : ""), onclick: onTap },
+        h("div", { class: "avatar" }, selected ? icon("check") : icon("cpu")),
+        h("div", { class: "grow" }, h("div", { class: "t" }, title), sub ? h("div", { class: "s" }, sub) : null),
+        onDel ? h("span", { class: "icon-btn", role: "button", "aria-label": "Удалить", onclick: (e) => { e.stopPropagation(); onDel(); } }, icon("del")) : null);
+      const useXray = eng === "xray";
+      const rows = [];
+      if (useXray) {
+        rows.push(row(!s.ver, "Активная версия", C.active ? "Выбрана в плагинах" : "Встроенное", () => set(eng, "")));
+        rows.push(row(s.ver === "builtin", "Встроенное", C.builtin ? "Xray " + C.builtin : "", () => set(eng, "builtin")));
+        C.list.forEach((c) => rows.push(row(s.ver === c.id, c.label, c.version ? "Xray " + c.version : "", () => set(eng, c.id), null)));
+      } else {
+        rows.push(row(!s.ver, "Активная версия", B.active ? "Выбрана в плагинах" : (B.builtin ? "Встроенное" : "Нет ядра"), () => set(eng, "")));
+        if (B.builtin) rows.push(row(s.ver === "builtin", "Встроенное", "Идёт в комплекте", () => set(eng, "builtin")));
+        B.list.forEach((c) => rows.push(row(s.ver === c.id, c.label, c.version ? "sing-box " + c.version : "", () => set(eng, c.id), () => Bridge.act("deleteSb", c.id))));
+      }
+      const rel = B.releases === null || B.releases === undefined ? h("div", { class: "body" }, "Загружаю…")
+        : h("div", { class: "list" }, B.releases.map((r) => h("div", { class: "row" },
+          h("div", { class: "grow" }, h("div", { class: "t" }, r.tag), h("div", { class: "s" }, fmtMb(r.size))),
+          h("button", { class: "btn tonal", disabled: busy, onclick: async () => { const x = await Bridge.act("downloadSb", r.tag); sbUi.msg = x && x.error ? x.error : "Ядро " + r.tag + " установлено"; refreshLive(); } }, icon("download"), "Скачать"))));
+      return h("div", {},
+        h("h2", {}, "Ядро сервера"),
+        h("div", { class: "body" }, s.name),
+        s.blocked ? h("div", { class: "msg bad" }, s.blocked) : null,
+        h("div", { class: "group-title" }, h("span", {}, "Ядро")),
+        h("div", { class: "actions split" }, engBtn("", "Авто"), engBtn("singbox", "sing-box"), engBtn("xray", "Xray")),
+        h("div", { class: "group-title" }, h("span", {}, useXray ? "Версия Xray" : "Версия sing-box")),
+        h("div", { class: "list" }, rows),
+        busy ? h("div", { class: "busy-line" }, h("div", { class: "bar" }), h("div", { class: "body" }, C.busy)) : null,
+        useXray ? null : h("div", { class: "actions" }, h("button", { class: "btn tonal", disabled: busy, onclick: async () => { sbUi.rel = !sbUi.rel; if (sbUi.rel && !B.releases) { const x = await Bridge.act("loadSbReleases"); if (x && x.error) sbUi.msg = x.error; } refreshLive(); } }, icon("download"), "Скачать версию sing-box")),
+        !useXray && sbUi.rel ? [h("div", { class: "group-title" }, h("span", {}, "Версии sing-box")), rel] : null,
+        sbUi.msg ? h("div", { class: "msg" }, sbUi.msg) : null);
+    });
+  }
   const coreUi = { rel: false, msg: "" };
   function fmtMb(n) { return (Number(n) / 1048576).toFixed(1) + " МБ"; }
   function openCores() {
@@ -1154,7 +1192,7 @@
 
   function conflictSheet(names, left) {
     const list = names.join(", ");
-    const msg = h("div", { class: "body", style: "margin-top:10px" }, left ? "Не удалось завершить: " + left.join(", ") + ". Закройте вручную или запустите FasdeqVPN от имени администратора." : "Запущено: " + list + ". Эти программы перехватывают трафик и мешают работе FasdeqVPN. Завершить их?");
+    const msg = h("div", { class: "body", style: "margin-top:10px" }, left ? "Не удалось завершить: " + left.join(", ") + ". Закройте вручную или запустите Tunn от имени администратора." : "Запущено: " + list + ". Эти программы перехватывают трафик и мешают работе Tunn. Завершить их?");
     const kill = h("button", { class: "btn filled" }, "Завершить процесс");
     const close = h("button", { class: "btn text", onclick: closeSheet }, "Закрыть");
     kill.onclick = async () => {
@@ -1179,7 +1217,7 @@
   let noticeShown = false;
   function openNotice() {
     noticeShown = true;
-    openSheet(h("div", {}, h("h2", {}, "Версия 3.2"), h("div", { class: "body" }, "Версия для ПК теперь на том же интерфейсе, что и на телефоне, с адаптацией под планшеты и широкие окна. Перед запуском проверяется, не мешают ли Happ, zapret и другие. Цвет принимает #fff, #ffffff и rgb(). Полное имя сервера: двойной тап или правый клик, долгое нажатие переносит."),
+    openSheet(h("div", {}, h("h2", {}, "Версия 3.3"), h("div", { class: "body" }, "sing-box теперь ядро по умолчанию, Xray подхватывает то, что sing-box не умеет. У сервера (долгое нажатие, шестерёнка) можно выбрать ядро и версию, скачивать версии sing-box. WireGuard и AmneziaWG теперь отдельные плагины. Фон автоматически подстраивается под цвет акцента. Приложение переименовано в Tunn."),
       h("div", { class: "actions" }, h("button", { class: "btn filled", onclick: () => { closeSheet(); Bridge.act("noticeSeen"); } }, "Понятно"))));
   }
   let shownUpdate = "";
@@ -1459,6 +1497,8 @@
       group("Подключение",
         sw("autoConnect", "Подключаться при запуске"),
         seg("dns", ["Cloudflare", "Google", "Quad9", "AdGuard", "Свой"], "DNS"),
+        only(DESK, seg("engine", ["sing-box", "Xray"], "Основное ядро")),
+        sw("xrayFallback", "Xray для неподдерживаемых серверов", "sing-box ведёт всё, что умеет. Остальное (XHTTP и др.) идёт через Xray. Выключите, и такие серверы станут неактивными"),
         textBox("dnsCustom", "Свои DNS через запятую", "1.1.1.1, 8.8.8.8", () => S.settings.dns === 4),
         only(DESK && S.tun, seg("tunMode", ["Авто", "Системный прокси", "TUN (весь трафик)"], "Режим VPN")),
         only(!DESK, slider("mtu", "MTU", 1280, 1500, 10, (x) => String(x)))),
@@ -1493,7 +1533,7 @@
       only(DESK, group("Окно и запуск",
         sw("closeToTray", "Сворачивать в трей", "Крестик скрывает окно, VPN продолжает работать"),
         sw("autostart", "Запускать вместе с системой"),
-        action("Выйти из FasdeqVPN", "Отключить VPN и закрыть приложение", () => Bridge.act("quit")))),
+        action("Выйти из Tunn", "Отключить VPN и закрыть приложение", () => Bridge.act("quit")))),
       group("Проверка пинга",
         seg("pingMode", ["Авто", "TCP", "UDP", "Оба", "ICMP"], "Способ"),
         seg("pingTimeout", ["2 с", "4 с", "8 с"], "Таймаут"),
@@ -1523,7 +1563,7 @@
     const dev = (name, role, url) => h(url ? "button" : "div", { class: "dev" + (url ? "" : " static"), onclick: url ? () => Bridge.act("open", url) : null },
       h("div", { class: "avatar" }, Array.from(name)[0].toUpperCase()),
       h("div", { class: "grow" }, h("div", { class: "t" }, name), role ? h("div", { class: "s" }, role) : null));
-    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.2 · создатель fasdeq13"),
+    v.append(h("div", { class: "about" }, h("div", { class: "title-large" }, "Tunn"), h("div", { class: "body" }, "Версия 3.3 · создатель fasdeq13"),
       h("div", { class: "group-title tight" }, h("span", {}, "Участники")),
       h("div", { class: "devs" }, dev("Fasdeq13", "Создатель", "https://github.com/Fasdeq13/FasdeqVPN"), dev("montik", "", null), dev("fezix64", "", null)),
       h("div", { class: "group-title tight" }, h("span", {}, "Официальный канал")),
@@ -1590,6 +1630,7 @@
       Bridge.act("select", next.selected).then(() => setTimeout(() => { pickingFirst = false; }, 600));
     }
     next.services = next.services || { names: ["Discord", "Telegram", "YouTube"], checking: false, checks: {}, best: [] };
+    next.sbCores = next.sbCores || null;
     next.cores = next.cores || { active: "", builtin: "", busy: null, list: [], releases: null };
     next.update = next.update || { available: false };
     next.plugins = next.plugins || { list: [], engine: "", busy: null, ui: [], catalog: null, families: [] };

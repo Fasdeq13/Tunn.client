@@ -42,7 +42,7 @@ pub fn build() -> Result<tray_icon::TrayIcon, String> {
     let (rgba, w, h) = raster(64);
     let icon = Icon::from_rgba(rgba, w, h).map_err(|e| e.to_string())?;
     let menu = Menu::new();
-    let show = MenuItem::with_id("show", "Открыть FasdeqVPN", true, None);
+    let show = MenuItem::with_id("show", "Открыть Tunn", true, None);
     let quit = MenuItem::with_id("quit", "Выход", true, None);
     menu.append(&show).map_err(|e| e.to_string())?;
     menu.append(&PredefinedMenuItem::separator()).map_err(|e| e.to_string())?;
@@ -57,5 +57,5 @@ pub fn build() -> Result<tray_icon::TrayIcon, String> {
             send(UiCmd::Show);
         }
     }));
-    TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("FasdeqVPN").with_icon(icon).build().map_err(|e| e.to_string())
+    TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Tunn").with_icon(icon).build().map_err(|e| e.to_string())
 }

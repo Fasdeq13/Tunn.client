@@ -67,6 +67,12 @@ object Cores {
         return if (bin.exists()) bin.absolutePath else null
     }
 
+    fun pathOf(context: Context, id: String): String? {
+        if (id.isEmpty()) return null
+        val f = File(root(context), "$id/xray")
+        return if (f.exists()) f.absolutePath else null
+    }
+
     fun delete(context: Context, id: String) {
         File(root(context), id).deleteRecursively()
         if (active(context) == id) setActive(context, "")

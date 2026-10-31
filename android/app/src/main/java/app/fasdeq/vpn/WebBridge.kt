@@ -164,7 +164,7 @@ class WebBridge(private val host: WebUiActivity) {
             }
             "select" -> {
                 val target = app.servers.firstOrNull { it.id == text }
-                val why = if (target == null) null else blockedFor(target.conf)
+                val why = if (target == null) null else blockedFor(target.conf, target.id)
                 if (why != null) reply(id, JSONObject().put("error", why)) else {
                     app.select(text)
                     reply(id)
@@ -195,6 +195,27 @@ class WebBridge(private val host: WebUiActivity) {
             }
             "checkServices" -> {
                 app.checkServices()
+                reply(id)
+                push()
+            }
+            "loadSbReleases" -> host.lifecycleScope.launch {
+                val error = app.loadSbReleases()
+                reply(id, if (error != null) JSONObject().put("error", error) else JSONObject())
+                push()
+            }
+            "downloadSb" -> host.lifecycleScope.launch {
+                val release = app.sbReleases?.firstOrNull { it.tag == text }
+                val error = if (release == null) "Версия не найдена" else app.downloadSb(release)
+                reply(id, if (error != null) JSONObject().put("error", error) else JSONObject())
+                push()
+            }
+            "selectSb" -> {
+                SbCores.setActive(host, text)
+                reply(id)
+                push()
+            }
+            "deleteSb" -> {
+                app.deleteSb(text)
                 reply(id)
                 push()
             }
@@ -270,6 +291,7 @@ class WebBridge(private val host: WebUiActivity) {
                     "enable" -> CorePlugins.setEnabled(host, pid, o.getBoolean("value"))
                     "primary" -> CorePlugins.setPrimary(host, pid)
                     "switch" -> CorePlugins.switchTo(host, pid)
+                    "server" -> CorePlugins.setServer(host, pid, o.optString("core"), o.optString("ver"))
                     "delete" -> CorePlugins.delete(host, pid)
                     "restore" -> {
                         host.lifecycleScope.launch {
@@ -412,7 +434,7 @@ class WebBridge(private val host: WebUiActivity) {
                 reply(id)
             }
             "noticeSeen" -> {
-                prefs.edit().putBoolean("notice32", true).apply()
+                prefs.edit().putBoolean("notice33", true).apply()
                 reply(id)
             }
             "haptic" -> {
@@ -464,6 +486,7 @@ class WebBridge(private val host: WebUiActivity) {
             "sortPing" -> st.changeSortPing(bool(v))
             "autoCheck" -> st.changeAutoCheck(bool(v))
             "mask" -> Identity.setMask(int(v))
+            "xrayFallback" -> CorePlugins.setFallback(host, bool(v))
             "checkInterval" -> st.changeCheckInterval(((v as? Number)?.toFloat()) ?: 60f)
             else -> {
                 if (path.startsWith("tuning.")) {
@@ -523,20 +546,21 @@ class WebBridge(private val host: WebUiActivity) {
     private val blockCache = HashMap<String, String>()
     private var blockSig = ""
 
-    private fun blockedFor(conf: String): String? {
+    private fun blockedFor(conf: String, sid: String = ""): String? {
         val sig = listOf(
             CorePlugins.usable(host, CorePlugins.XRAY), CorePlugins.usable(host, CorePlugins.SINGBOX),
             CorePlugins.usable(host, CorePlugins.TUIC), CorePlugins.usable(host, CorePlugins.WG),
-            CorePlugins.usable(host, CorePlugins.AWG), CorePlugins.primary(host), Plugins.stamp
+            CorePlugins.usable(host, CorePlugins.AWG), CorePlugins.primary(host), CorePlugins.fallback(host), Plugins.stamp
         ).toString()
         if (sig != blockSig) {
             blockCache.clear()
             blockSig = sig
         }
-        return blockCache.getOrPut(conf) { computeBlocked(conf) ?: "" }.ifEmpty { null }
+        val ov = if (sid.isEmpty()) "" else CorePlugins.serverCore(host, sid)
+        return blockCache.getOrPut("$ov|$conf") { computeBlocked(conf, ov) ?: "" }.ifEmpty { null }
     }
 
-    private fun computeBlocked(conf: String): String? {
+    private fun computeBlocked(conf: String, ov: String): String? {
         if (conf.startsWith("dpi://")) return null
         if (Wg.isConf(conf)) {
             return when (Wg.kind(conf)) {
@@ -550,16 +574,19 @@ class WebBridge(private val host: WebUiActivity) {
         } catch (e: Throwable) {
             return null
         }
-        if (CorePlugins.pick(host, parsed.outbound) != null) return null
+        if (CorePlugins.pick(host, parsed.outbound, ov) != null) return null
         if (parsed.outbound.optString("protocol") == "tuic") {
             return if (!CorePlugins.present(host, CorePlugins.TUIC)) "В этой сборке нет ядра sing-box для TUIC"
             else "Включите плагин TUIC в настройках"
         }
         val x = CorePlugins.usable(host, CorePlugins.XRAY)
         val sb = CorePlugins.usable(host, CorePlugins.SINGBOX)
+        if (ov == CorePlugins.SINGBOX) return if (sb) "Ядро sing-box такое не поддерживает. Смените ядро сервера (шестерёнка)" else "Включите ядро sing-box в плагинах"
+        if (ov == CorePlugins.XRAY) return "Включите ядро Xray в плагинах"
         return when {
-            sb && !x -> "Ядро sing-box такое не поддерживает. Включите Xray в настройках"
+            sb && !x -> "Ядро sing-box такое не поддерживает. Включите Xray в плагинах"
             !sb && !x -> "Включите ядро в настройках"
+            sb && x && !CorePlugins.fallback(host) -> "Ядро sing-box такое не поддерживает. Включите «Xray для неподдерживаемых» в настройках"
             else -> "Не поддерживается включёнными ядрами"
         }
     }
@@ -613,7 +640,9 @@ class WebBridge(private val host: WebUiActivity) {
                     .put("proto", protoOf(s.conf))
                     .put("endpoint", s.endpoint)
                     .put("group", s.group)
-                    .put("blocked", blockedFor(s.conf) ?: JSONObject.NULL)
+                    .put("blocked", blockedFor(s.conf, s.id) ?: JSONObject.NULL)
+                    .put("core", CorePlugins.serverCore(host, s.id))
+                    .put("ver", CorePlugins.serverVer(host, s.id))
             )
         }
         o.put("servers", servers)
@@ -648,10 +677,11 @@ class WebBridge(private val host: WebUiActivity) {
         settings.put("tuning", JSONObject(st.tuning.toJson()))
         settings.put("autoCheck", st.autoCheck)
         settings.put("mask", Identity.mask())
+        settings.put("xrayFallback", CorePlugins.fallback(host))
         settings.put("checkInterval", st.checkInterval.toDouble())
         o.put("settings", settings)
         o.put("plugins", plugins())
-        o.put("notice", !prefs.getBoolean("notice32", false))
+        o.put("notice", !prefs.getBoolean("notice33", false))
 
         val checks = JSONObject()
         for (s in st.servers) {
@@ -686,6 +716,16 @@ class WebBridge(private val host: WebUiActivity) {
                 .put("releases", if (rel == null) JSONObject.NULL else relArr)
         )
 
+        val sbArr = JSONArray()
+        for (c in st.sbCores) sbArr.put(JSONObject().put("id", c.id).put("label", c.label).put("version", c.version))
+        val sbRel = JSONArray()
+        st.sbReleases?.take(12)?.forEach { sbRel.put(JSONObject().put("tag", it.tag).put("size", it.size)) }
+        o.put(
+            "sbCores",
+            JSONObject().put("active", SbCores.active(host)).put("list", sbArr)
+                .put("releases", if (st.sbReleases == null) JSONObject.NULL else sbRel)
+                .put("builtin", CorePlugins.singboxFile(host).exists())
+        )
         o.put("corePlugins", CorePlugins.snapshot(host))
         o.put("appIcon", AppIcon.snapshot(host))
 

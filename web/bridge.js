@@ -116,6 +116,7 @@
     groups: [{ name: "Основная", url: "https://example.com/sub", used: 13555990528, total: 107374182400, expire: Math.floor(Date.now() / 1000) + 86400 * 142 }, { name: "Запасные", url: "https://example.com/sub2", used: 5368709120, total: 0, expire: 0 }],
     settings: {},
     services: { names: ["Discord", "Telegram", "YouTube"], checking: false, checks: {}, best: [] },
+    sbCores: { active: "", builtin: true, list: [{ id: "s1", label: "sing-box 1.12.0", version: "1.12.0" }], releases: null },
     cores: { active: "", builtin: "25.9.11", busy: null, list: [{ id: "c1", label: "Xray 25.8.3", version: "25.8.3" }], releases: null },
     plugins: {
       list: [{ key: "ru-bypass@1.0", id: "ru-bypass", name: "Обход для приложений", version: "1.0", family: "ru-bypass", author: "Fasdeq13", description: "Напрямую: банки и госуслуги", kinds: ["rules"], enabled: true, wg: false, hasUi: false,
@@ -242,6 +243,8 @@
         case "selectCore": S.cores.active = payload; push(); break;
         case "deleteCore": S.cores.list = S.cores.list.filter((c) => c.id !== payload); if (S.cores.active === payload) S.cores.active = ""; push(); break;
         case "pickCore": return Promise.resolve({});
+        case "corePlugin": { if (payload && payload.op === "server") { const sv = S.servers.find((x) => x.id === payload.id); if (sv) { sv.core = payload.core; sv.ver = payload.ver; } push(); } return Promise.resolve({}); }
+        case "loadSbReleases": return new Promise((r) => setTimeout(() => { S.sbCores.releases = [{ tag: "v1.12.4", size: 24000000 }, { tag: "v1.12.0", size: 23000000 }]; push(); r({}); }, 400));
         case "loadReleases":
           S.cores.busy = "Загружаю список версий…"; push();
           return new Promise((r) => setTimeout(() => { S.cores.busy = null; S.cores.releases = [{ tag: "v25.9.11", size: 14000000 }, { tag: "v25.8.3", size: 13800000 }, { tag: "v25.7.26", size: 13700000 }]; push(); r({}); }, 600));
