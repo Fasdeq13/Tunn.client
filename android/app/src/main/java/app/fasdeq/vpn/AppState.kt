@@ -144,9 +144,9 @@ class AppState(private val app: Application) {
     var coreBusy by mutableStateOf<String?>(null)
         private set
     var releases by mutableStateOf<List<Release>?>(null)
+        private set
     var sbReleases by mutableStateOf<List<Release>?>(null)
     val sbCores = mutableStateListOf<CoreInfo>()
-        private set
     var status by mutableStateOf(Status.Off)
         private set
     var error by mutableStateOf<String?>(null)

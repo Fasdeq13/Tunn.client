@@ -88,6 +88,10 @@ object CorePlugins {
         return null
     }
 
+    fun switchTo(c: Context, id: String) {
+        prefs(c).edit().putBoolean("on_$id", true).putString("primary", id).apply()
+    }
+
     fun snapshot(c: Context): JSONObject {
         val out = JSONObject()
         val items = JSONArray()
