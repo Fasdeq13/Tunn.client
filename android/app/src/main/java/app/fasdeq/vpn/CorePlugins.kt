@@ -88,6 +88,35 @@ object CorePlugins {
         return null
     }
 
+    private fun wgWant(c: Context, conf: String, ov: String): String {
+        val mode = Plugins.wgMode(c)
+        return when {
+            ov == "awg" || ov == "xray" -> ov
+            mode == 1 -> "awg"
+            mode == 2 -> "xray"
+            Wg.isAwg(conf) -> "awg"
+            else -> if (usable(c, XRAY)) "xray" else "awg"
+        }
+    }
+
+    fun wgEngine(c: Context, conf: String, ov: String): String? {
+        val awgConf = Wg.isAwg(conf)
+        val want = wgWant(c, conf, ov)
+        if (want == "awg") return if (usable(c, AWG) && (awgConf || usable(c, WG))) "awg" else null
+        return if (usable(c, XRAY) && usable(c, WG)) "xray" else null
+    }
+
+    fun wgReason(c: Context, conf: String, ov: String): String {
+        val awgConf = Wg.isAwg(conf)
+        val want = wgWant(c, conf, ov)
+        if (want == "awg") {
+            if (!usable(c, AWG)) return "Включите плагин AmneziaWG в плагинах"
+            return "Включите плагин WireGuard в плагинах"
+        }
+        if (!usable(c, XRAY)) return "Для этого сервера выбрано ядро Xray, включите его в плагинах"
+        return if (awgConf) "Для ядра Xray включите плагин WireGuard (параметры Amnezia будут отброшены)" else "Включите плагин WireGuard в плагинах"
+    }
+
     fun switchTo(c: Context, id: String) {
         prefs(c).edit().putBoolean("on_$id", true).putString("primary", id).apply()
     }

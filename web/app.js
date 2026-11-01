@@ -81,7 +81,7 @@
     anim: { all: true, pages: true, controls: true, sheets: true, enabled: true, speed: 1, intensity: 1, tempo: 1, burst: true, waves: 3, idle: true, iconFx: true, press: true, haptics: true, ripple: true, list: true, fold: true, cards: true, pingFx: true, select: true, glow: 1 },
     look: { style: 0, contrast: 0, tintLevel: 1, secHue: 0, terHue: 60, radius: 1, density: 1 },
     button: { size: 224, lobes: 10, shape: 0 },
-    textScale: 1, autoCheck: false, xrayFallback: true, engine: 0, mask: 1, checkInterval: 60, updates: { auto: true },
+    textScale: 1, autoCheck: false, xrayFallback: true, engine: 0, bgOn: false, bg: { r: 18, g: 20, b: 22 }, bgGrad: true, mask: 1, checkInterval: 60, updates: { auto: true },
     autoConnect: false, dns: 0, dnsCustom: "", mtu: 1500,
     pingMode: 0, pingTimeout: 1, autoPing: false, sortPing: true,
     tuning: { ipv6: true, log: 2, sniff: false, lan: false, quic: false, ds: 0, am: 0, apps: "", unm: false, idle: 300, buf: 0, mux: false, muxc: 8 },
@@ -148,7 +148,7 @@
   function applyTheme() {
     const st = S.settings;
     const lk = Object.assign({}, DEFAULTS.look, st.look || {});
-    const key = JSON.stringify([st.theme, st.dynamic, st.amoled, st.tint, st.accent, S.dark, S.colors, lk]);
+    const key = JSON.stringify([st.theme, st.dynamic, st.amoled, st.tint, st.accent, S.dark, S.colors, lk, st.bgOn, st.bg, st.bgGrad]);
     if (key === themeKey) return;
     themeKey = key;
     document.documentElement.style.setProperty("--rs", String(clamp(Number(lk.radius) || 1, 0.3, 2)));
@@ -156,7 +156,10 @@
     srv.rowH = 68;
     srv.sig = "";
     const sysDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const dark = st.theme === 1 ? false : st.theme === 2 ? true : (S.dark !== undefined ? S.dark : sysDark);
+    let dark = st.theme === 1 ? false : st.theme === 2 ? true : (S.dark !== undefined ? S.dark : sysDark);
+    const bgC = st.bgOn && st.bg ? st.bg : null;
+    const bgL = bgC ? rgbToOklch(bgC.r, bgC.g, bgC.b)[0] : 0;
+    if (bgC) dark = bgL <= 0.6;
     document.body.classList.toggle("light", !dark);
     if (barsDark !== dark) { barsDark = dark; Bridge.bars(dark); }
     document.body.classList.toggle("amoled", dark && !!st.amoled);
@@ -167,6 +170,7 @@
       const c = S.colors.map((x) => "#" + (x & 0xffffff).toString(16).padStart(6, "0"));
       set("--primary", c[0]); set("--on-primary", c[1]); set("--primary-container", c[2]); set("--on-primary-container", c[3]);
       set("--secondary-container", c[4]); set("--on-secondary-container", c[5]); set("--tertiary", c[6]);
+      customBg(bgC, bgL, st);
       return;
     }
     const acc = st.accent;
@@ -206,6 +210,20 @@
     }
     const terC = grey ? 0 : [0.1, 0.15, 0.13, 0.07, 0][styleI];
     set("--tertiary", "oklch(" + (dark ? 0.8 : 0.5) + " " + terC + " " + ((H + (Number(lk.terHue) || 0) + 360) % 360).toFixed(1) + ")");
+    customBg(bgC, bgL, st);
+  }
+  function customBg(c, L, st) {
+    document.body.classList.toggle("nograd", !st.bgGrad);
+    if (!c) return;
+    const root = document.documentElement.style;
+    const set = (k, v) => root.setProperty(k, v);
+    const hx = toHex(c), lightBg = L > 0.6, to = lightBg ? "black" : "white";
+    const m = (p) => "color-mix(in oklab, " + hx + " " + (100 - p) + "%, " + to + ")";
+    set("--surface", hx); set("--sc-low", m(3)); set("--sc", m(6)); set("--sc-high", m(9)); set("--sc-highest", m(13));
+    set("--on-surface", lightBg ? "oklch(.22 0 0)" : "oklch(.94 0 0)");
+    set("--on-surface-variant", lightBg ? "oklch(.42 0 0)" : "oklch(.78 0 0)");
+    set("--outline", lightBg ? "oklch(.55 0 0)" : "oklch(.6 0 0)");
+    set("--outline-variant", lightBg ? "oklch(.8 0 0)" : "oklch(.38 0 0)");
   }
 
   let motionKey = "";
@@ -1001,6 +1019,7 @@
     if (coreSw[p.id]) coreSw[p.id].classList.toggle("on", on);
     await sleep(220);
     await act(p.id, "enable", on);
+    reapply();
   }
   function corePluginRows() {
     const CP = S.corePlugins || { list: [], dpi: {} };
@@ -1011,7 +1030,7 @@
         : (p.id === "singbox" || p.id === "tuic") ? h("button", { class: "switch", disabled: true, "aria-label": "Нет в сборке" }) : null;
       if (sw && p.present) coreSw[p.id] = sw;
       const note = !p.present && (p.id === "singbox" || p.id === "tuic") ? " · нет в этой сборке (соберите: SINGBOX=1 ./build.sh android)" : "";
-      return h("div", { class: "row plug" },
+      const rowEl = h("div", { class: "row plug tap", onclick: (e) => { if (e.target.closest(".switch,.icon-btn,.btn")) return; pluginSheet(p); } },
         h("div", { class: "grow" },
           h("div", { class: "t" }, p.name + (p.primary && p.enabled ? " · основное" : "")),
           h("div", { class: "s" }, p.description + note + (p.id === "dpi" && p.present ? " · " + dpiLine(CP.dpi) : ""))),
@@ -1019,6 +1038,7 @@
         sw,
         p.present ? h("button", { class: "icon-btn", "aria-label": "Удалить", onclick: () => Bridge.act("corePlugin", { id: p.id, op: "delete" }) }, icon("del"))
           : (p.id === "xray" ? h("button", { class: "btn tonal sm", onclick: async () => { snack("Скачиваю Xray…"); const r = await Bridge.act("corePlugin", { id: "xray", op: "restore" }); if (r && r.error) snack(r.error); } }, icon("download"), "Скачать") : null));
+      return rowEl;
     });
   }
 
@@ -1121,20 +1141,21 @@
       if (!s) { return h("div", {}, h("h2", {}, "Сервер удалён")); }
       const C = S.cores, B = S.sbCores;
       const busy = !!C.busy;
-      const set = (core, ver) => Bridge.act("corePlugin", { id: sid, op: "server", core, ver });
+      const set = async (core, ver) => { await Bridge.act("corePlugin", { id: sid, op: "server", core, ver }); if (S.selected === sid) reapply(); };
       const eng = s.core || "";
       const engBtn = (v, label) => h("button", { class: "btn " + (eng === v ? "filled" : "tonal"), onclick: () => set(v, "") }, label);
       const row = (selected, title, sub, onTap, onDel) => h("button", { class: "row" + (selected ? " selected" : ""), onclick: onTap },
         h("div", { class: "avatar" }, selected ? icon("check") : icon("cpu")),
         h("div", { class: "grow" }, h("div", { class: "t" }, title), sub ? h("div", { class: "s" }, sub) : null),
         onDel ? h("span", { class: "icon-btn", role: "button", "aria-label": "Удалить", onclick: (e) => { e.stopPropagation(); onDel(); } }, icon("del")) : null);
+      const isWg = /wireguard|amnezia/i.test(s.proto || "");
       const useXray = eng === "xray";
       const rows = [];
       if (useXray) {
         rows.push(row(!s.ver, "Активная версия", C.active ? "Выбрана в плагинах" : "Встроенное", () => set(eng, "")));
         rows.push(row(s.ver === "builtin", "Встроенное", C.builtin ? "Xray " + C.builtin : "", () => set(eng, "builtin")));
         C.list.forEach((c) => rows.push(row(s.ver === c.id, c.label, c.version ? "Xray " + c.version : "", () => set(eng, c.id), null)));
-      } else {
+      } else if (!isWg) {
         rows.push(row(!s.ver, "Активная версия", B.active ? "Выбрана в плагинах" : (B.builtin ? "Встроенное" : "Нет ядра"), () => set(eng, "")));
         if (B.builtin) rows.push(row(s.ver === "builtin", "Встроенное", "Идёт в комплекте", () => set(eng, "builtin")));
         B.list.forEach((c) => rows.push(row(s.ver === c.id, c.label, c.version ? "sing-box " + c.version : "", () => set(eng, c.id), () => Bridge.act("deleteSb", c.id))));
@@ -1147,18 +1168,71 @@
         h("h2", {}, "Ядро сервера"),
         h("div", { class: "body" }, s.name),
         s.blocked ? h("div", { class: "msg bad" }, s.blocked) : null,
-        h("div", { class: "group-title" }, h("span", {}, "Ядро")),
-        h("div", { class: "actions split" }, engBtn("", "Авто"), engBtn("singbox", "sing-box"), engBtn("xray", "Xray")),
-        h("div", { class: "group-title" }, h("span", {}, useXray ? "Версия Xray" : "Версия sing-box")),
-        h("div", { class: "list" }, rows),
+        h("div", { class: "group-title" }, h("span", {}, isWg ? "Движок WireGuard" : "Ядро")),
+        isWg ? h("div", { class: "body" }, "Авто: AmneziaWG-конфиги идут через движок AmneziaWG, обычный WireGuard через Xray. Можно выбрать вручную. Через Xray параметры Amnezia отбрасываются.") : null,
+        h("div", { class: "actions split" }, engBtn("", "Авто"), isWg ? engBtn("awg", "AmneziaWG") : engBtn("singbox", "sing-box"), engBtn("xray", "Xray")),
+        rows.length ? h("div", { class: "group-title" }, h("span", {}, useXray ? "Версия Xray" : "Версия sing-box")) : null,
+        rows.length ? h("div", { class: "list" }, rows) : null,
         busy ? h("div", { class: "busy-line" }, h("div", { class: "bar" }), h("div", { class: "body" }, C.busy)) : null,
-        useXray ? null : h("div", { class: "actions" }, h("button", { class: "btn tonal", disabled: busy, onclick: async () => { sbUi.rel = !sbUi.rel; if (sbUi.rel && !B.releases) { const x = await Bridge.act("loadSbReleases"); if (x && x.error) sbUi.msg = x.error; } refreshLive(); } }, icon("download"), "Скачать версию sing-box")),
-        !useXray && sbUi.rel ? [h("div", { class: "group-title" }, h("span", {}, "Версии sing-box")), rel] : null,
+        useXray || isWg ? null : h("div", { class: "actions" }, h("button", { class: "btn tonal", disabled: busy, onclick: async () => { sbUi.rel = !sbUi.rel; if (sbUi.rel && !B.releases) { const x = await Bridge.act("loadSbReleases"); if (x && x.error) sbUi.msg = x.error; } refreshLive(); } }, icon("download"), "Скачать версию sing-box")),
+        !useXray && !isWg && sbUi.rel ? [h("div", { class: "group-title" }, h("span", {}, "Версии sing-box")), rel] : null,
         sbUi.msg ? h("div", { class: "msg" }, sbUi.msg) : null);
+    });
+  }
+  function sbCoresSheet() {
+    sbUi.msg = "";
+    openLive(() => {
+      const C = S.cores, B = S.sbCores || { list: [], active: "", builtin: false, releases: null };
+      const busy = !!C.busy;
+      const row = (selected, title, sub, onTap, onDel) => h("button", { class: "row" + (selected ? " selected" : ""), onclick: onTap },
+        h("div", { class: "avatar" }, selected ? icon("check") : icon("cpu")),
+        h("div", { class: "grow" }, h("div", { class: "t" }, title), sub ? h("div", { class: "s" }, sub) : null),
+        onDel ? h("span", { class: "icon-btn", role: "button", "aria-label": "Удалить", onclick: (e) => { e.stopPropagation(); onDel(); } }, icon("del")) : null);
+      const rows = [];
+      if (B.builtin) rows.push(row(!B.active, "Встроенное", "Идёт в комплекте с приложением", () => Bridge.act("selectSb", ""), null));
+      B.list.forEach((c) => rows.push(row(B.active === c.id, c.label, c.version ? "sing-box " + c.version : "", () => Bridge.act("selectSb", c.id), () => Bridge.act("deleteSb", c.id))));
+      const rel = B.releases === null || B.releases === undefined ? h("div", { class: "body" }, "Загружаю…")
+        : h("div", { class: "list" }, B.releases.map((r) => h("div", { class: "row" },
+          h("div", { class: "grow" }, h("div", { class: "t" }, r.tag), h("div", { class: "s" }, fmtMb(r.size))),
+          h("button", { class: "btn tonal", disabled: busy, onclick: async () => { const x = await Bridge.act("downloadSb", r.tag); sbUi.msg = x && x.error ? x.error : "Ядро " + r.tag + " установлено и выбрано"; refreshLive(); } }, icon("download"), "Скачать"))));
+      return h("div", {},
+        h("h2", {}, "Ядро sing-box"),
+        h("div", { class: "body" }, "Активная версия используется для всех серверов, у которых не выбрана своя (долгое нажатие на сервер, шестерёнка)."),
+        busy ? h("div", { class: "busy-line" }, h("div", { class: "bar" }), h("div", { class: "body" }, C.busy)) : null,
+        h("div", { class: "group-title" }, h("span", {}, "Активная версия")),
+        rows.length ? h("div", { class: "list" }, rows) : h("div", { class: "body" }, "Встроенного ядра в этой сборке нет, скачайте версию ниже."),
+        h("div", { class: "actions" }, h("button", { class: "btn tonal", disabled: busy, onclick: async () => { sbUi.rel = !sbUi.rel; if (sbUi.rel && !B.releases) { const x = await Bridge.act("loadSbReleases"); if (x && x.error) sbUi.msg = x.error; } refreshLive(); } }, icon("download"), "Скачать версию")),
+        sbUi.rel ? [h("div", { class: "group-title" }, h("span", {}, "Версии sing-box")), rel] : null,
+        sbUi.msg ? h("div", { class: "msg" }, sbUi.msg) : null);
+    });
+  }
+  function pluginSheet(p) {
+    if (p.id === "xray" && p.present) { openCores(); return; }
+    if (p.id === "singbox" && p.present && S.sbCores) { sbCoresSheet(); return; }
+    openLive(() => {
+      const cur = (S.corePlugins && S.corePlugins.list.find((x) => x.id === p.id)) || p;
+      return h("div", {},
+        h("h2", {}, cur.name),
+        h("div", { class: "body" }, cur.description),
+        cur.present ? null : h("div", { class: "msg bad" }, "Нет в этой сборке"),
+        cur.present ? h("div", { class: "actions" },
+          h("button", { class: "btn " + (cur.enabled ? "tonal" : "filled"), onclick: async () => { await toggleCore(cur, (S.corePlugins.list || []).filter((x) => x.core)); refreshLive(); } }, cur.enabled ? "Выключить" : "Включить")) : null);
     });
   }
   const coreUi = { rel: false, msg: "" };
   function fmtMb(n) { return (Number(n) / 1048576).toFixed(1) + " МБ"; }
+  async function openLog() {
+    const r = await Bridge.act("coreLog");
+    const text = (r && r.log) || "Журнал пуст. Подключитесь и откройте его снова.";
+    const pre = h("pre", { class: "log" }, text);
+    openSheet(h("div", {},
+      h("h2", {}, "Журнал ядра"),
+      pre,
+      h("div", { class: "actions" },
+        h("button", { class: "btn tonal", onclick: async () => { await Bridge.act("copy", text); snack("Скопировано"); } }, "Копировать"),
+        h("button", { class: "btn text", onclick: closeSheet }, "Закрыть"))));
+    setTimeout(() => { pre.scrollTop = pre.scrollHeight; }, 50);
+  }
   function openCores() {
     coreUi.msg = "";
     openLive(() => {
@@ -1245,6 +1319,18 @@
       o[keys[keys.length - 1]] = e.v;
     });
   }
+  let reapplying = false;
+  async function reapply() {
+    if (reapplying || S.status !== "On") return;
+    reapplying = true;
+    snack("Применяю ядро, переподключаюсь…");
+    try {
+      await Bridge.act("disconnect");
+      for (let i = 0; i < 50 && S.status !== "Off"; i++) await sleep(150);
+      const r = await Bridge.act("connect");
+      if (r && r.error) snack(r.error);
+    } finally { reapplying = false; }
+  }
   function setPath(path, value) {
     pend.set(path, { v: value, t: performance.now() });
     const keys = path.split(".");
@@ -1252,6 +1338,7 @@
     for (let i = 0; i < keys.length - 1; i++) o = o[keys[i]];
     o[keys[keys.length - 1]] = value;
     Bridge.act("set", { path, value });
+    if (path === "engine" || path === "xrayFallback") setTimeout(reapply, 250);
     applyTheme();
     applyMotionFlags();
     Power.kick();
@@ -1444,6 +1531,36 @@
     return r;
   }
 
+  const BG_PRESETS = ["#000000", "#0F1115", "#121A1A", "#1A1226", "#101820", "#241A1A", "#F5F5F5", "#FFF8E7", "#E8F0FE"];
+  function bgEditor() {
+    const hex = h("input", { class: "hex", maxlength: 40, spellcheck: "false", autocomplete: "off", autocapitalize: "off", placeholder: "#RRGGBB", "aria-label": "Цвет фона" });
+    const prev = h("div", { class: "rgb-preview" });
+    const set = (c) => setPath("bg", { r: c.r, g: c.g, b: c.b });
+    const sw_ = BG_PRESETS.map((x) => h("button", { class: "swatch", "aria-label": x, style: "background:" + x, onclick: () => set(parseColor(x)) }));
+    let t = 0;
+    const apply = (final) => {
+      const c = parseColor(hex.value);
+      hex.classList.toggle("bad", !c && hex.value.trim() !== "");
+      if (c) { const cur = S.settings.bg; if (cur.r !== c.r || cur.g !== c.g || cur.b !== c.b) set(c); if (final) hex.value = toHex(c).toUpperCase(); }
+      else if (final) { hex.value = toHex(S.settings.bg).toUpperCase(); hex.classList.remove("bad"); }
+    };
+    hex.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => apply(false), 220); });
+    hex.addEventListener("change", () => { clearTimeout(t); apply(true); });
+    hex.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); apply(true); hex.blur(); } });
+    hex.addEventListener("blur", () => apply(true));
+    const r = h("div", { class: "row block" }, h("div", { class: "head" }, h("div", { class: "t" }, "Цвет фона")), prev, h("div", { class: "swatches" }, sw_),
+      h("div", { class: "field-row" }, h("div", { class: "body", style: "flex:1" }, "Код: #fff, #101820, rgb(16,24,32) или название"), hex));
+    refreshers.push(() => {
+      r.hidden = !S.settings.bgOn;
+      const c = S.settings.bg, hx = toHex(c).toUpperCase();
+      prev.style.background = hx;
+      prev.style.color = rgbToOklch(c.r, c.g, c.b)[0] > 0.6 ? "#111" : "#fff";
+      prev.textContent = hx;
+      if (document.activeElement !== hex) hex.value = hx;
+    });
+    return r;
+  }
+
   function buildSettings() {
     const v = $("#view-settings");
     const put = (...x) => v.append(...x.flat(Infinity));
@@ -1457,7 +1574,10 @@
         colorEditor(),
         sw("dynamic", "Цвета системы", "Палитра из обоев вместо своего цвета. Android 12 и новее"),
         sw("tint", "Оттенять фон цветом", "Выключите для нейтральных серых поверхностей"),
-        sw("amoled", "Чёрный фон", "Для OLED-экранов в тёмной теме")),
+        sw("amoled", "Чёрный фон", "Для OLED-экранов в тёмной теме"),
+        sw("bgOn", "Свой цвет фона", "Фон, карточки и текст подстроятся под выбранный цвет. Светлый фон включает светлую тему"),
+        bgEditor(),
+        sw("bgGrad", "Градиент на фоне", "Мягкое свечение от цвета акцента")),
       group("Material You: детально",
         palettePreview(),
         seg("look.style", ["Базовая", "Яркая", "Живая", "Мягкая", "Моно"], "Стиль палитры", () => !S.settings.dynamic),
@@ -1518,7 +1638,8 @@
         seg("tuning.am", ["Все", "Исключить", "Только"], "Через VPN идут"),
         textBox("tuning.apps", "Пакеты через запятую", "org.telegram.messenger, com.discord", () => S.settings.tuning.am !== 0))),
       group("Ядро",
-        action("Ядро Xray", "Встроенное или своё, версия и загрузка", openCores)),
+        action("Ядро Xray", "Встроенное или своё, версия и загрузка", openCores),
+        only(DESK, action("Журнал ядра", "Последние строки лога sing-box, если сеть не работает", openLog))),
       group("Сервисы",
         sw("autoCheck", "Проверять сервисы автоматически", "Discord, Telegram и YouTube через каждый сервер, пока VPN включён"),
         slider("checkInterval", "Интервал проверки", 5, 240, 5, (x) => x + " мин", () => S.settings.autoCheck),
@@ -1622,13 +1743,6 @@
     next.settings = merge(DEFAULTS, next.settings || {});
     applyPend(next.settings);
     next.servers = next.servers || [];
-    const okSrv = next.servers.filter((x) => !x.blocked);
-    const selSrv = next.servers.find((x) => x.id === next.selected);
-    if (next.selected && (!selSrv || selSrv.blocked) && okSrv.length && !pickingFirst) {
-      pickingFirst = true;
-      next.selected = okSrv[0].id;
-      Bridge.act("select", next.selected).then(() => setTimeout(() => { pickingFirst = false; }, 600));
-    }
     next.services = next.services || { names: ["Discord", "Telegram", "YouTube"], checking: false, checks: {}, best: [] };
     next.sbCores = next.sbCores || null;
     next.cores = next.cores || { active: "", builtin: "", busy: null, list: [], releases: null };

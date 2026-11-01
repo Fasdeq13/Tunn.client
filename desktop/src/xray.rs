@@ -358,7 +358,7 @@ impl Drop for Proc {
 pub fn start(bin: &Path, config: &Value, wait_port: u16) -> Result<Proc, String> {
     let path = data_dir().join(format!("run-{}.json", wait_port));
     std::fs::write(&path, config.to_string()).map_err(|e| e.to_string())?;
-    let log = data_dir().join(format!("run-{}.log", wait_port));
+    let log = data_dir().join("xray.log");
     let log_file = std::fs::File::create(&log).ok();
     let mut cmd = Command::new(bin);
     cmd.arg("run")
@@ -389,7 +389,6 @@ pub fn start(bin: &Path, config: &Value, wait_port: u16) -> Result<Proc, String>
     loop {
         if !proc.alive() {
             let text = std::fs::read_to_string(&log).unwrap_or_default();
-            let _ = std::fs::remove_file(&log);
             let line = text
                 .lines()
                 .rev()
@@ -403,7 +402,6 @@ pub fn start(bin: &Path, config: &Value, wait_port: u16) -> Result<Proc, String>
         )
         .is_ok()
         {
-            let _ = std::fs::remove_file(&log);
             return Ok(proc);
         }
         if Instant::now() > end {
@@ -724,7 +722,6 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
                     _ => if last.is_empty() { "TUN не запустился".to_string() } else { last.clone() },
                 };
                 proc.stop_file = None;
-                let _ = std::fs::remove_file(&log);
                 return Err(hint);
             }
             Ok(None) => {}
@@ -734,7 +731,6 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
         if rules.contains("20001")
             && TcpStream::connect_timeout(&([127, 0, 0, 1], wait_port).into(), Duration::from_millis(150)).is_ok()
         {
-            let _ = std::fs::remove_file(&log);
             return Ok(proc);
         }
         if Instant::now() > end {

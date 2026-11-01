@@ -331,8 +331,7 @@ object Plugins {
 
     fun usesAwg(context: Context, conf: String): Boolean {
         if (!Wg.isConf(conf)) return false
-        val mode = wgMode(context)
-        return mode == 1 || (mode == 0 && Wg.isAwg(conf))
+        return CorePlugins.wgEngine(context, conf, "") == "awg"
     }
 
     fun awgConf(context: Context, conf: String): String {

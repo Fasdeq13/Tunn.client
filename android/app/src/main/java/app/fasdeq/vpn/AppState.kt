@@ -1033,16 +1033,24 @@ class AppState(private val app: Application) {
 
     private fun launchSwitch(target: Server) {
         val dpi = target.conf == CorePlugins.DPI_CONF
+        val ov = CorePlugins.serverCore(app, target.id)
+        val isWg = !dpi && Wg.isConf(target.conf)
+        val wgE = if (isWg) CorePlugins.wgEngine(app, target.conf, ov) else null
+        if (isWg && wgE == null) {
+            error = CorePlugins.wgReason(app, target.conf, ov)
+            return
+        }
         val plugin = if (dpi) null else try {
             Plugins.forConf(app, target.conf)
         } catch (e: Throwable) {
             null
         }
-        val awg = !dpi && plugin == null && Plugins.usesAwg(app, target.conf)
+        val awg = !dpi && plugin == null && wgE == "awg"
         var engine = CorePlugins.XRAY
         val outbound = if (dpi || plugin != null || awg) "{}" else try {
-            val parsed = Links.parse(Plugins.effectiveConf(app, target.conf)).outbound
-            engine = CorePlugins.pick(app, parsed, CorePlugins.serverCore(app, target.id)) ?: run {
+            val src = if (wgE == "xray" && Wg.isAwg(target.conf)) Wg.stripAwg(target.conf) else Plugins.effectiveConf(app, target.conf)
+            val parsed = Links.parse(src).outbound
+            engine = if (wgE == "xray") CorePlugins.XRAY else CorePlugins.pick(app, parsed, ov) ?: run {
                 error = if (parsed.optString("protocol") == "tuic") "Для TUIC включите плагин TUIC (нужно ядро sing-box)" else if (CorePlugins.serverCore(app, target.id) == CorePlugins.SINGBOX) "Ядро sing-box такое не поддерживает. Смените ядро сервера" else "Ядро не найдено. Включите ядро в Настройки, Плагины"
                 return
             }
@@ -1069,7 +1077,7 @@ class AppState(private val app: Application) {
             .putExtra(FasdeqVpnService.EXTRA_DPI, dpi)
         if (awg) {
             val conf = try {
-                Plugins.awgConf(app, Plugins.effectiveConf(app, target.conf))
+                Plugins.awgConf(app, target.conf)
             } catch (e: Exception) {
                 error = e.message ?: "Неверная конфигурация"
                 return

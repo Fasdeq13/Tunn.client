@@ -563,10 +563,7 @@ class WebBridge(private val host: WebUiActivity) {
     private fun computeBlocked(conf: String, ov: String): String? {
         if (conf.startsWith("dpi://")) return null
         if (Wg.isConf(conf)) {
-            return when (Wg.kind(conf)) {
-                "awg" -> if (CorePlugins.usable(host, CorePlugins.AWG)) null else "Включите плагин AmneziaWG в настройках"
-                else -> if (CorePlugins.usable(host, CorePlugins.WG)) null else "Включите плагин WireGuard в настройках"
-            }
+            return if (CorePlugins.wgEngine(host, conf, ov) != null) null else CorePlugins.wgReason(host, conf, ov)
         }
         val parsed = try {
             if (Plugins.forConf(host, conf) != null || Plugins.usesAwg(host, conf)) return null

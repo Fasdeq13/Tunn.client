@@ -26,6 +26,7 @@ struct Conn {
     bin: PathBuf,
     tun: bool,
     sb: bool,
+    tun_proc: Option<xray::Proc>,
 }
 
 struct Update {
@@ -167,6 +168,9 @@ fn stop_conn(conn: Option<Conn>) {
     let mut tun = false;
     if let Some(mut c) = conn {
         tun = c.tun;
+        if let Some(mut t) = c.tun_proc.take() {
+            t.stop();
+        }
         c.proc.stop();
     }
     if !tun {
@@ -452,7 +456,7 @@ impl Host {
                 let mut g = self.inner.lock().unwrap();
                 match g.conn.as_mut() {
                     Some(c) => {
-                        let alive = c.proc.alive();
+                        let alive = c.proc.alive() && c.tun_proc.as_mut().map(|t| t.alive()).unwrap_or(true);
                         Some((alive, c.bin.clone(), if c.sb { 0 } else { c.api }))
                     }
                     None => None,
@@ -685,28 +689,59 @@ impl Host {
             #[cfg(target_os = "linux")]
             if want_tun || mode == 2 {
                 let cfg = singbox::build_config(&parsed.outbound, port, true)?;
-                let proc = singbox::start_tun(&bin, &cfg, port)?;
-                return Ok(Conn { proc, api: 0, bin, tun: true, sb: true });
+                let mut proc = singbox::start_tun(&bin, &cfg, port)?;
+                if let Err(e) = singbox::probe(port) {
+                    proc.stop();
+                    let tail = singbox::log_tail(4);
+                    return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
+                }
+                return Ok(Conn { proc, api: 0, bin, tun: true, sb: true, tun_proc: None });
             }
             let cfg = singbox::build_config(&parsed.outbound, port, false)?;
-            let proc = singbox::start(&bin, &cfg, port)?;
+            let mut proc = singbox::start(&bin, &cfg, port)?;
+            if let Err(e) = singbox::probe(port) {
+                proc.stop();
+                let tail = singbox::log_tail(4);
+                return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
+            }
             xray::set_system_proxy(port, port);
-            return Ok(Conn { proc, api: 0, bin, tun: false, sb: true });
+            return Ok(Conn { proc, api: 0, bin, tun: false, sb: true, tun_proc: None });
         }
         let bin = self.ensure_core()?;
         let dns = self.inner.lock().unwrap().store.settings.dns_list();
         let socks = xray::free_port();
         let http = xray::free_port();
         let api = xray::free_port();
+        let exclude = singbox::server_ips(&parsed.outbound);
         let cfg = links::inner_config(parsed.outbound, socks, http, Some(api), &dns);
         #[cfg(target_os = "linux")]
         if want_tun || mode == 2 {
+            if let Ok(sb) = self.ensure_singbox() {
+                let mixed = xray::free_port();
+                let mut proc = xray::start(&bin, &cfg, socks)?;
+                let tcfg = singbox::build_tun_over_socks(socks, mixed, &exclude);
+                match singbox::start_tun(&sb, &tcfg, mixed) {
+                    Ok(mut tp) => {
+                        if let Err(e) = singbox::probe(mixed) {
+                            tp.stop();
+                            proc.stop();
+                            let tail = singbox::log_tail(6);
+                            return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
+                        }
+                        return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: Some(tp) });
+                    }
+                    Err(e) => {
+                        proc.stop();
+                        return Err(e);
+                    }
+                }
+            }
             let proc = xray::start_tun(&bin, cfg, socks)?;
-            return Ok(Conn { proc, api, bin, tun: true, sb: false });
+            return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: None });
         }
         let proc = xray::start(&bin, &cfg, socks)?;
         xray::set_system_proxy(http, socks);
-        Ok(Conn { proc, api, bin, tun: false, sb: false })
+        Ok(Conn { proc, api, bin, tun: false, sb: false, tun_proc: None })
     }
 
     pub fn disconnect(self: &Arc<Self>) {
@@ -1381,6 +1416,10 @@ impl Host {
                 let path = payload["path"].as_str().unwrap_or("").to_string();
                 self.set_setting(&path, &payload["value"]);
                 json!({})
+            }
+            "coreLog" => {
+                push = false;
+                json!({"log": singbox::log_tail(150)})
             }
             "checkUpdate" => self.check_update(),
             "dismissUpdate" => {

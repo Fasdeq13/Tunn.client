@@ -96,6 +96,7 @@ pub fn build_config(outbound: &Value, port: u16, tun: bool) -> Result<Value, Str
         "vless" => {
             o["type"] = json!("vless");
             o["uuid"] = user["id"].clone();
+            o["packet_encoding"] = json!("xudp");
             if let Some(f) = user["flow"].as_str().filter(|x| !x.is_empty()) {
                 o["flow"] = json!(f);
             }
@@ -103,6 +104,7 @@ pub fn build_config(outbound: &Value, port: u16, tun: bool) -> Result<Value, Str
         "vmess" => {
             o["type"] = json!("vmess");
             o["uuid"] = user["id"].clone();
+            o["packet_encoding"] = json!("xudp");
             o["security"] = json!(user["security"].as_str().unwrap_or("auto"));
             o["alter_id"] = json!(user["alterId"].as_u64().unwrap_or(0));
         }
@@ -152,20 +154,135 @@ pub fn build_config(outbound: &Value, port: u16, tun: bool) -> Result<Value, Str
     }
     let mut inbounds = vec![json!({"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": port})];
     let mut route = json!({"final": "proxy"});
+    let mut cfg = json!({"log": {"level": "info", "timestamp": true}});
     if tun {
         inbounds.push(json!({
             "type": "tun", "tag": "tun-in", "interface_name": TUN_NAME,
             "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
-            "mtu": 1400, "auto_route": true, "strict_route": false, "stack": "mixed"
+            "mtu": 1400, "auto_route": true, "strict_route": false, "stack": "mixed",
+            "route_exclude_address": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8", "224.0.0.0/4", "fe80::/10", "fc00::/7"]
         }));
         route["auto_detect_interface"] = json!(true);
+        route["rules"] = json!([
+            {"action": "sniff"},
+            {"protocol": "dns", "action": "hijack-dns"}
+        ]);
+        cfg["dns"] = json!({
+            "servers": [{"tag": "remote", "type": "tcp", "server": "1.1.1.1", "detour": "proxy"}],
+            "final": "remote"
+        });
     }
-    Ok(json!({
-        "log": {"level": "warn"},
-        "inbounds": inbounds,
-        "outbounds": [o, {"type": "direct", "tag": "direct"}],
-        "route": route
-    }))
+    cfg["inbounds"] = json!(inbounds);
+    cfg["outbounds"] = json!([o, {"type": "direct", "tag": "direct"}]);
+    cfg["route"] = route;
+    Ok(cfg)
+}
+
+pub fn build_tun_over_socks(socks: u16, mixed: u16, exclude: &[String]) -> Value {
+    let mut ex: Vec<Value> = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8", "224.0.0.0/4", "fe80::/10", "fc00::/7"]
+        .iter().map(|x| json!(x)).collect();
+    for e in exclude {
+        ex.push(json!(e));
+    }
+    json!({
+        "log": {"level": "info", "timestamp": true},
+        "dns": {"servers": [{"tag": "remote", "type": "tcp", "server": "1.1.1.1", "detour": "proxy"}], "final": "remote"},
+        "inbounds": [
+            {"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": mixed},
+            {"type": "tun", "tag": "tun-in", "interface_name": TUN_NAME, "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+             "mtu": 1400, "auto_route": true, "strict_route": false, "stack": "mixed", "route_exclude_address": ex}
+        ],
+        "outbounds": [
+            {"type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": socks, "version": "5"},
+            {"type": "direct", "tag": "direct"}
+        ],
+        "route": {"final": "proxy", "auto_detect_interface": true, "rules": [{"action": "sniff"}, {"protocol": "dns", "action": "hijack-dns"}]}
+    })
+}
+
+fn ip_cidr(host: &str) -> Option<String> {
+    let h = host.trim().trim_start_matches('[').trim_end_matches(']');
+    if h.parse::<std::net::Ipv4Addr>().is_ok() {
+        Some(format!("{}/32", h))
+    } else if h.parse::<std::net::Ipv6Addr>().is_ok() {
+        Some(format!("{}/128", h))
+    } else {
+        None
+    }
+}
+
+fn collect_ips(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                if let Some(t) = x.as_str() {
+                    if k == "address" {
+                        if let Some(c) = ip_cidr(t) {
+                            out.push(c);
+                        }
+                    } else if k == "endpoint" {
+                        let host = match t.rfind(':') {
+                            Some(i) if !t.ends_with(']') => &t[..i],
+                            _ => t,
+                        };
+                        if let Some(c) = ip_cidr(host) {
+                            out.push(c);
+                        }
+                    }
+                } else {
+                    collect_ips(x, out);
+                }
+            }
+        }
+        Value::Array(a) => {
+            for x in a {
+                collect_ips(x, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn server_ips(outbound: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_ips(outbound, &mut out);
+    out.sort();
+    out.dedup();
+    out
+}
+
+pub fn log_path() -> PathBuf {
+    data_dir().join("core.log")
+}
+
+pub fn log_tail(lines: usize) -> String {
+    let mut text = std::fs::read_to_string(log_path()).unwrap_or_default();
+    let x = std::fs::read_to_string(data_dir().join("xray.log")).unwrap_or_default();
+    if !x.trim().is_empty() {
+        text.push_str("\n--- xray ---\n");
+        text.push_str(&x);
+    }
+    let all: Vec<&str> = text.lines().collect();
+    let from = all.len().saturating_sub(lines);
+    all[from..].join("\n")
+}
+
+pub fn probe(port: u16) -> Result<(), String> {
+    let proxy = ureq::Proxy::new(&format!("socks5h://127.0.0.1:{}", port)).map_err(|e| e.to_string())?;
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .proxy(Some(proxy))
+        .timeout_global(Some(Duration::from_secs(9)))
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut last = String::new();
+    for _ in 0..2 {
+        match agent.get("http://cp.cloudflare.com/generate_204").call() {
+            Ok(_) => return Ok(()),
+            Err(e) => last = e.to_string(),
+        }
+    }
+    Err(last)
 }
 
 fn exe() -> &'static str {
@@ -302,7 +419,7 @@ exit 0
 pub fn start(bin: &Path, config: &Value, port: u16) -> Result<Proc, String> {
     let path = data_dir().join(format!("run-{}.json", port));
     std::fs::write(&path, config.to_string()).map_err(|e| e.to_string())?;
-    let log = data_dir().join(format!("run-{}.log", port));
+    let log = log_path();
     let lf = std::fs::File::create(&log).ok();
     let mut cmd = Command::new(bin);
     cmd.arg("run").arg("-c").arg(&path).stdin(Stdio::null())
@@ -326,7 +443,6 @@ fn wait_ready(proc: &mut Proc, log: &Path, port: u16, secs: u64, need_tun: bool)
         let port_ok = std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(150)).is_ok();
         let tun_ok = !need_tun || std::path::Path::new(&format!("/sys/class/net/{}", TUN_NAME)).exists();
         if port_ok && tun_ok {
-            let _ = std::fs::remove_file(log);
             return Ok(());
         }
         if Instant::now() > end {
@@ -349,7 +465,7 @@ pub fn start_tun(bin: &Path, config: &Value, port: u16) -> Result<Proc, String> 
     std::fs::write(&path, config.to_string()).map_err(|e| e.to_string())?;
     let stop = data_dir().join("tun.stop");
     let _ = std::fs::remove_file(&stop);
-    let log = data_dir().join("tun.log");
+    let log = log_path();
     let lf = std::fs::File::create(&log).ok();
     let mut cmd = Command::new(pkexec);
     cmd.arg("/bin/sh").arg("-c").arg(TUN_SCRIPT).arg("tunn").arg(bin).arg(&path).arg(&stop)
@@ -374,7 +490,6 @@ pub fn start_tun(bin: &Path, config: &Value, port: u16) -> Result<Proc, String> 
         }
         let port_ok = std::net::TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(150)).is_ok();
         if port_ok && Path::new(&format!("/sys/class/net/{}", TUN_NAME)).exists() {
-            let _ = std::fs::remove_file(&log);
             return Ok(proc);
         }
         if Instant::now() > end {
@@ -405,5 +520,18 @@ mod tests {
         assert_eq!(c["inbounds"][1]["type"], "tun");
         let x = fasdeq_core::links::parse("vless://11111111-1111-1111-1111-111111111111@1.2.3.4:443?type=xhttp&security=tls&sni=a.com&path=%2Fx#x").unwrap();
         assert!(!supports(&x.outbound));
+    }
+}
+
+#[cfg(test)]
+mod tests2 {
+    use super::*;
+
+    #[test]
+    fn wg_endpoint_excluded() {
+        let o = json!({"protocol": "wireguard", "settings": {"address": ["10.0.0.2/32"], "peers": [{"endpoint": "89.22.225.139:1443", "publicKey": "x"}]}});
+        assert_eq!(server_ips(&o), vec!["89.22.225.139/32".to_string()]);
+        let v = json!({"settings": {"vnext": [{"address": "1.2.3.4", "port": 443}]}});
+        assert_eq!(server_ips(&v), vec!["1.2.3.4/32".to_string()]);
     }
 }

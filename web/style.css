@@ -587,3 +587,9 @@ html, body { transition: background-color calc(500ms * var(--k, 1)) var(--ease, 
 }
 body.light #app::before { opacity: .55; }
 body.amoled #app::before { opacity: .45; }
+
+.row.plug.tap { cursor: pointer; }
+.row.plug.tap:hover { background: color-mix(in oklab, var(--on-surface) 5%, var(--sc)); }
+pre.log { margin: 12px 0; padding: 12px; max-height: 50vh; overflow: auto; border-radius: 14px; background: var(--sc-highest); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; }
+body.nograd #app::before { display: none; }
+.row[hidden] { display: none; }
