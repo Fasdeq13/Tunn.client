@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.HapticFeedbackConstants
-import android.webkit.JavascriptInterface
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,7 +18,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.FutureTask
 
-class WebBridge(private val host: WebUiActivity) {
+class WebBridge(private val host: BaseUiActivity) {
     private val main = Handler(Looper.getMainLooper())
     private val prefs = host.getSharedPreferences("fasdeq", Context.MODE_PRIVATE)
     private val app get() = FasdeqApp.state
@@ -31,19 +30,15 @@ class WebBridge(private val host: WebUiActivity) {
         return task.get()
     }
 
-    @JavascriptInterface
     fun state(): String = onMain { snapshot() }
 
-    @JavascriptInterface
     fun ready() {
     }
 
-    @JavascriptInterface
     fun bars(dark: Boolean) {
         main.post { host.applyBars(dark) }
     }
 
-    @JavascriptInterface
     fun act(name: String, payload: String, id: Int) {
         main.post {
             plugAt = 0L
@@ -56,23 +51,12 @@ class WebBridge(private val host: WebUiActivity) {
     }
 
     fun reply(id: Int, value: JSONObject = JSONObject()) {
-        host.runJs("window.__fasdeqResult(" + id + "," + JSONObject.quote(value.toString()) + ")")
+        host.onReply(id, value)
     }
 
     fun pushLater() {
         main.postDelayed({ push() }, 300)
         main.postDelayed({ push() }, 1200)
-    }
-
-    fun pushStats() {
-        val st = app
-        val o = JSONObject()
-            .put("rx", st.rx)
-            .put("tx", st.tx)
-            .put("down", st.downSpeed)
-            .put("up", st.upSpeed)
-            .put("uptime", st.uptime)
-        host.runJs("window.__fasdeqStats(" + JSONObject.quote(o.toString()) + ")")
     }
 
     private var plugCache: JSONObject? = null
@@ -99,44 +83,13 @@ class WebBridge(private val host: WebUiActivity) {
             sentPing[s.id] = st.pings[s.id]
             sentCheck[s.id] = st.checks[s.id]
         }
-        host.runJs("window.__fasdeqPush(" + JSONObject.quote(snapshot()) + ")")
+        val json = snapshot()
+        host.onPushed(json)
     }
 
     fun pingHash(): Int {
         val st = app
         return listOf(st.pings.toMap(), st.checks.toMap(), st.checkingServices).hashCode()
-    }
-
-    fun pushPings() {
-        val st = app
-        val pings = JSONObject()
-        val checks = JSONObject()
-        for (s in st.servers.toList()) {
-            val p = st.pings[s.id]
-            if (sentPing[s.id] != p) {
-                sentPing[s.id] = p
-                val best = p?.best() ?: Int.MAX_VALUE
-                pings.put(
-                    s.id,
-                    JSONObject()
-                        .put("ms", if (best == Int.MAX_VALUE || best <= 0) JSONObject.NULL else best)
-                        .put("busy", p?.busy ?: false)
-                )
-            }
-            val c = st.checks[s.id]
-            if (sentCheck[s.id] != c) {
-                sentCheck[s.id] = c
-                if (c != null) {
-                    val arr = JSONArray()
-                    for (v in c.ms) arr.put(v ?: JSONObject.NULL)
-                    checks.put(s.id, JSONObject().put("ms", arr).put("busy", c.busy))
-                }
-            }
-        }
-        val best = JSONArray()
-        for (i in Services.names.indices) best.put(st.bestFor(i) ?: JSONObject.NULL)
-        val o = JSONObject().put("pings", pings).put("checks", checks).put("best", best).put("checking", st.checkingServices)
-        host.runJs("window.__fasdeqPings(" + JSONObject.quote(o.toString()) + ")")
     }
 
     private fun parse(raw: String): Any? {
@@ -434,7 +387,7 @@ class WebBridge(private val host: WebUiActivity) {
                 reply(id)
             }
             "noticeSeen" -> {
-                prefs.edit().putBoolean("notice33", true).apply()
+                prefs.edit().putBoolean("notice34", true).apply()
                 reply(id)
             }
             "haptic" -> {
@@ -615,7 +568,7 @@ class WebBridge(private val host: WebUiActivity) {
         return out
     }
 
-    private fun snapshot(): String {
+    fun snapshot(): String {
         val st = app
         val o = JSONObject()
         o.put("status", st.status.name)
@@ -678,7 +631,7 @@ class WebBridge(private val host: WebUiActivity) {
         settings.put("checkInterval", st.checkInterval.toDouble())
         o.put("settings", settings)
         o.put("plugins", plugins())
-        o.put("notice", !prefs.getBoolean("notice33", false))
+        o.put("notice", !prefs.getBoolean("notice34", false))
 
         val checks = JSONObject()
         for (s in st.servers) {

@@ -1,0 +1,160 @@
+package app.fasdeq.vpn
+
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+
+fun parseHex(text: String): Color? {
+    var t = text.trim().removePrefix("#")
+    if (t.length == 3) t = t.map { "$it$it" }.joinToString("")
+    if (t.length != 6) return null
+    val v = t.toLongOrNull(16) ?: return null
+    return Color((0xFF000000 or v).toInt())
+}
+
+fun toHex(c: Color): String {
+    val r = (c.red * 255f + 0.5f).toInt()
+    val g = (c.green * 255f + 0.5f).toInt()
+    val b = (c.blue * 255f + 0.5f).toInt()
+    return String.format("#%02X%02X%02X", r, g, b)
+}
+
+class Hsl(val h: Float, val s: Float, val l: Float)
+
+fun toHsl(c: Color): Hsl {
+    val r = c.red
+    val g = c.green
+    val b = c.blue
+    val mx = max(r, max(g, b))
+    val mn = min(r, min(g, b))
+    val l = (mx + mn) / 2f
+    val d = mx - mn
+    if (d < 1e-5f) return Hsl(0f, 0f, l)
+    val s = d / (1f - abs(2f * l - 1f))
+    val h = when (mx) {
+        r -> ((g - b) / d) % 6f
+        g -> (b - r) / d + 2f
+        else -> (r - g) / d + 4f
+    } * 60f
+    return Hsl(if (h < 0) h + 360f else h, s.coerceIn(0f, 1f), l)
+}
+
+fun hsl(h: Float, s: Float, l: Float): Color {
+    val c = (1f - abs(2f * l - 1f)) * s
+    val hp = (((h % 360f) + 360f) % 360f) / 60f
+    val x = c * (1f - abs(hp % 2f - 1f))
+    val (r1, g1, b1) = when {
+        hp < 1f -> Triple(c, x, 0f)
+        hp < 2f -> Triple(x, c, 0f)
+        hp < 3f -> Triple(0f, c, x)
+        hp < 4f -> Triple(0f, x, c)
+        hp < 5f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    val m = l - c / 2f
+    return Color((r1 + m).coerceIn(0f, 1f), (g1 + m).coerceIn(0f, 1f), (b1 + m).coerceIn(0f, 1f))
+}
+
+private fun lum(c: Color): Float = 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
+
+private fun on(c: Color): Color = if (lum(c) > 0.55f) Color(0xFF101414) else Color(0xFFFFFFFF)
+
+fun accentScheme(accent: Color, dark: Boolean, bg: Color?, amoled: Boolean): ColorScheme {
+    val a = toHsl(accent)
+    val h = a.h
+    val s = max(a.s, if (a.s < 0.08f) 0f else 0.35f).coerceAtMost(1f)
+    val tint = if (a.s < 0.08f) 0f else 1f
+    val primary = if (dark) hsl(h, s, max(a.l, 0.68f)) else hsl(h, s, min(a.l, 0.42f))
+    val bgLight = bg != null && lum(bg) > 0.55f
+    val useDark = if (bg != null) !bgLight else dark
+    val base = bg ?: if (useDark) hsl(h, 0.10f * tint, if (amoled) 0f else 0.075f) else hsl(h, 0.16f * tint, 0.97f)
+    val bh = toHsl(base)
+    fun step(k: Float): Color =
+        if (useDark) hsl(bh.h, bh.s, (bh.l + k).coerceAtMost(0.95f)) else hsl(bh.h, bh.s, (bh.l - k).coerceAtLeast(0.05f))
+    val onSurface = if (useDark) hsl(bh.h, 0.06f, 0.9f) else hsl(bh.h, 0.1f, 0.1f)
+    val variant = if (useDark) hsl(bh.h, 0.06f, 0.72f) else hsl(bh.h, 0.08f, 0.32f)
+    val pc = if (useDark) hsl(h, s * 0.55f, 0.24f) else hsl(h, s * 0.75f, 0.88f)
+    val sc = if (useDark) hsl(h, s * 0.25f, 0.27f) else hsl(h, s * 0.35f, 0.89f)
+    val container = if (amoled && useDark && bg == null) Color(0xFF0D0D0D) else step(0.05f)
+    val colors = if (useDark) {
+        darkColorScheme(
+            primary = primary, onPrimary = on(primary),
+            primaryContainer = pc, onPrimaryContainer = hsl(h, 0.6f * tint, 0.9f),
+            secondary = hsl(h, s * 0.3f, 0.75f), secondaryContainer = sc, onSecondaryContainer = hsl(h, 0.3f * tint, 0.9f),
+            tertiary = hsl(h + 60f, s * 0.5f, 0.75f),
+            background = base, onBackground = onSurface, surface = base, onSurface = onSurface,
+            surfaceVariant = step(0.1f), onSurfaceVariant = variant,
+            surfaceContainer = container, surfaceContainerHigh = step(0.08f), surfaceContainerHighest = step(0.12f),
+            outline = hsl(bh.h, 0.05f, 0.55f), error = Color(0xFFFFB4AB)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary, onPrimary = on(primary),
+            primaryContainer = pc, onPrimaryContainer = hsl(h, 0.7f * tint, 0.12f),
+            secondary = hsl(h, s * 0.4f, 0.35f), secondaryContainer = sc, onSecondaryContainer = hsl(h, 0.4f * tint, 0.12f),
+            tertiary = hsl(h + 60f, s * 0.5f, 0.38f),
+            background = base, onBackground = onSurface, surface = base, onSurface = onSurface,
+            surfaceVariant = step(0.08f), onSurfaceVariant = variant,
+            surfaceContainer = step(0.04f), surfaceContainerHigh = step(0.07f), surfaceContainerHighest = step(0.1f),
+            outline = hsl(bh.h, 0.05f, 0.5f), error = Color(0xFFBA1A1A)
+        )
+    }
+    return colors
+}
+
+@Composable
+fun isDarkFor(theme: Int): Boolean = when (theme) {
+    1 -> false
+    2 -> true
+    else -> isSystemInDarkTheme()
+}
+
+@Composable
+fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
+    val ctx = LocalContext.current
+    var dark = isDarkFor(s.theme)
+    val bg = if (s.bgOn) parseHex(s.bgHex) else null
+    if (bg != null) dark = lum(bg) <= 0.55f
+    val custom = parseHex(s.accentHex)
+    val scheme: ColorScheme = if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
+        var d = if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        if (dark && s.amoled) {
+            d = d.copy(
+                background = Color.Black, surface = Color.Black,
+                surfaceContainer = Color(0xFF0D0D0D), surfaceContainerHigh = Color(0xFF151515), surfaceContainerHighest = Color(0xFF1D1D1D)
+            )
+        }
+        d
+    } else {
+        accentScheme(custom ?: Color(0xFF4FD8C8), dark, bg, dark && s.amoled)
+    }
+    SideEffect {
+        (ctx as? BaseUiActivity)?.applyBars(dark)
+    }
+    MaterialTheme(
+        colorScheme = scheme,
+        shapes = Shapes(
+            extraSmall = RoundedCornerShape(8.dp),
+            small = RoundedCornerShape(14.dp),
+            medium = RoundedCornerShape(20.dp),
+            large = RoundedCornerShape(26.dp),
+            extraLarge = RoundedCornerShape(34.dp)
+        ),
+        content = content
+    )
+}

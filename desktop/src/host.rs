@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-pub const VERSION: &str = "3.3";
+pub const VERSION: &str = "3.4";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiCmd {

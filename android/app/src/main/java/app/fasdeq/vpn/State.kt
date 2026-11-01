@@ -3,17 +3,17 @@ package app.fasdeq.vpn
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KProperty
 
-class Box<T>(@Volatile var value: T) {
+class Cell<T>(@Volatile var value: T) {
     operator fun getValue(thisRef: Any?, property: KProperty<*>): T = value
     operator fun setValue(thisRef: Any?, property: KProperty<*>, v: T) {
         value = v
     }
 }
 
-fun <T> mutableStateOf(value: T): Box<T> = Box(value)
-fun mutableIntStateOf(value: Int): Box<Int> = Box(value)
-fun mutableLongStateOf(value: Long): Box<Long> = Box(value)
-fun mutableFloatStateOf(value: Float): Box<Float> = Box(value)
+fun <T> mutableStateOf(value: T): Cell<T> = Cell(value)
+fun mutableIntStateOf(value: Int): Cell<Int> = Cell(value)
+fun mutableLongStateOf(value: Long): Cell<Long> = Cell(value)
+fun mutableFloatStateOf(value: Float): Cell<Float> = Cell(value)
 
 class SafeList<T> : AbstractMutableList<T>(), RandomAccess {
     @Volatile private var snap: List<T> = emptyList()

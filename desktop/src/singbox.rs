@@ -186,7 +186,7 @@ pub fn build_tun_over_socks(socks: u16, mixed: u16, exclude: &[String]) -> Value
     }
     json!({
         "log": {"level": "info", "timestamp": true},
-        "dns": {"servers": [{"tag": "remote", "type": "tcp", "server": "1.1.1.1", "detour": "proxy"}], "final": "remote"},
+        "dns": {"servers": [{"tag": "remote", "type": "tcp", "server": "1.1.1.1", "detour": "proxy"}], "final": "remote", "strategy": "ipv4_only"},
         "inbounds": [
             {"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": mixed},
             {"type": "tun", "tag": "tun-in", "interface_name": TUN_NAME, "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
@@ -196,7 +196,12 @@ pub fn build_tun_over_socks(socks: u16, mixed: u16, exclude: &[String]) -> Value
             {"type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": socks, "version": "5"},
             {"type": "direct", "tag": "direct"}
         ],
-        "route": {"final": "proxy", "auto_detect_interface": true, "rules": [{"action": "sniff"}, {"protocol": "dns", "action": "hijack-dns"}]}
+        "route": {"final": "proxy", "auto_detect_interface": true, "rules": [
+            {"action": "sniff"},
+            {"protocol": "dns", "action": "hijack-dns"},
+            {"ip_version": 6, "action": "reject", "method": "default"},
+            {"network": "udp", "port": 443, "action": "reject", "method": "default"}
+        ]}
     })
 }
 

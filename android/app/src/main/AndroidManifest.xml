@@ -96,10 +96,9 @@
         </activity-alias>
 
         <activity
-            android:name=".WebUiActivity"
+            android:name=".ComposeActivity"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|density|navigation|colorMode|fontScale|layoutDirection"
-            android:hardwareAccelerated="true"
             android:launchMode="singleTask"
             android:theme="@style/Theme.Fasdeq"
             android:windowSoftInputMode="adjustResize" />
