@@ -1,0 +1,1 @@
+Tunn is a VPN client with sing-box and Xray cores, a standalone WireGuard engine, AmneziaWG, subscriptions, per-app routing and service checks. No ads, no trackers, no analytics.

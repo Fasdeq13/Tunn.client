@@ -32,13 +32,6 @@ class WebBridge(private val host: BaseUiActivity) {
 
     fun state(): String = onMain { snapshot() }
 
-    fun ready() {
-    }
-
-    fun bars(dark: Boolean) {
-        main.post { host.applyBars(dark) }
-    }
-
     fun act(name: String, payload: String, id: Int) {
         main.post {
             plugAt = 0L
@@ -72,19 +65,8 @@ class WebBridge(private val host: BaseUiActivity) {
         return fresh
     }
 
-    private val sentPing = HashMap<String, PingResult?>()
-    private val sentCheck = HashMap<String, ServiceCheck?>()
-
     fun push() {
-        sentPing.clear()
-        sentCheck.clear()
-        val st = app
-        for (s in st.servers) {
-            sentPing[s.id] = st.pings[s.id]
-            sentCheck[s.id] = st.checks[s.id]
-        }
-        val json = snapshot()
-        host.onPushed(json)
+        host.onPushed(snapshot())
     }
 
     fun pingHash(): Int {
@@ -381,13 +363,26 @@ class WebBridge(private val host: BaseUiActivity) {
             }
             "clipboard" -> reply(id, JSONObject().put("text", clipboard()))
             "hwid" -> reply(id, JSONObject().put("hwid", Identity.hwid()))
+            "hwidInfo" -> reply(
+                id,
+                JSONObject().put("hwid", Identity.hwid()).put("os", Identity.os()).put("ver", Identity.osVer()).put("model", Identity.model())
+            )
+            "hwidSet" -> {
+                val o = value as JSONObject
+                Identity.setDevice(o.optString("os"), o.optString("ver"), o.optString("model"))
+                reply(id)
+            }
+            "hwidDefaults" -> {
+                Identity.resetDevice()
+                reply(id)
+            }
             "hwidReset" -> reply(id, JSONObject().put("hwid", Identity.resetHwid()))
             "copy" -> {
                 host.getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Tunn", text))
                 reply(id)
             }
             "noticeSeen" -> {
-                prefs.edit().putBoolean("notice34", true).apply()
+                prefs.edit().putBoolean("notice35", true).apply()
                 reply(id)
             }
             "haptic" -> {
@@ -631,7 +626,7 @@ class WebBridge(private val host: BaseUiActivity) {
         settings.put("checkInterval", st.checkInterval.toDouble())
         o.put("settings", settings)
         o.put("plugins", plugins())
-        o.put("notice", !prefs.getBoolean("notice34", false))
+        o.put("notice", !prefs.getBoolean("notice35", false))
 
         val checks = JSONObject()
         for (s in st.servers) {

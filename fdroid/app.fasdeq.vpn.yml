@@ -1,0 +1,22 @@
+Categories:
+  - Connectivity
+  - Security
+License: GPL-2.0-only
+AuthorName: fasdeq13
+SourceCode: https://github.com/Fasdeq13/FasdeqVPN
+IssueTracker: https://github.com/Fasdeq13/FasdeqVPN/issues
+AutoName: Tunn
+RepoType: git
+Repo: https://github.com/Fasdeq13/FasdeqVPN.git
+Builds:
+  - versionName: '3.5'
+    versionCode: 26
+    commit: v3.5
+    subdir: android/app
+    gradle:
+      - fdroid
+    gradleprops:
+      - app.fdroid=1
+    prebuild: echo "NOTE - libv2ray.aar and the sing-box/AmneziaWG binaries must be built from source for inclusion"
+AutoUpdateMode: Version
+UpdateCheckMode: Tags

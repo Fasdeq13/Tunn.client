@@ -32,6 +32,22 @@ object Identity {
         return value
     }
 
+    val osChoices = listOf("Android", "iOS", "Windows", "macOS", "Linux")
+
+    fun os(): String = prefs().getString("hw_os", null)?.ifBlank { null } ?: "Android"
+
+    fun osVer(): String = prefs().getString("hw_ver", null)?.ifBlank { null } ?: (Build.VERSION.RELEASE ?: "")
+
+    fun model(): String = prefs().getString("hw_model", null)?.ifBlank { null } ?: (Build.MODEL ?: "")
+
+    fun setDevice(os: String, ver: String, model: String) {
+        prefs().edit().putString("hw_os", os.trim()).putString("hw_ver", ver.trim()).putString("hw_model", model.trim()).apply()
+    }
+
+    fun resetDevice() {
+        prefs().edit().remove("hw_os").remove("hw_ver").remove("hw_model").apply()
+    }
+
     fun order(url: String): List<Int> {
         val host = try { java.net.URL(url).host ?: "" } catch (e: Exception) { "" }
         val known = prefs().getInt("maskfor:$host", -1)
@@ -51,8 +67,8 @@ object Identity {
         c.setRequestProperty("User-Agent", agents[m.coerceIn(0, agents.size - 1)])
         c.setRequestProperty("Accept", "*/*")
         c.setRequestProperty("x-hwid", hwid())
-        c.setRequestProperty("x-device-os", "Android")
-        c.setRequestProperty("x-ver-os", Build.VERSION.RELEASE ?: "")
-        c.setRequestProperty("x-device-model", Build.MODEL ?: "")
+        c.setRequestProperty("x-device-os", os())
+        c.setRequestProperty("x-ver-os", osVer())
+        c.setRequestProperty("x-device-model", model())
     }
 }

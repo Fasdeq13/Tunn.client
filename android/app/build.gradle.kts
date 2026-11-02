@@ -13,8 +13,9 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 25
-        versionName = (project.findProperty("app.vname") as String?) ?: "3.4"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 26
+        versionName = (project.findProperty("app.vname") as String?) ?: "3.5"
+        buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -56,6 +57,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     lint {

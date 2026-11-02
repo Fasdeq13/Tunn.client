@@ -354,6 +354,12 @@ class AppState(private val app: Application) {
                 list.map { server ->
                     launch(Dispatchers.IO) {
                         gate.withPermit {
+                            val pg = pings[server.id]
+                            val dead = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE
+                            if (dead) {
+                                synchronized(checks) { checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false) }
+                                return@withPermit
+                            }
                             val config = synchronized(probeLock) { probeConfigFor(server) }
                             var firstFailed = false
                             val last = Services.names.size - 1
@@ -789,6 +795,11 @@ class AppState(private val app: Application) {
                             PingResult(tcp = Ping.FAIL)
                         }
                         pings[server.id] = result
+                        if (result.best() == Int.MAX_VALUE && checks.containsKey(server.id)) {
+                            synchronized(checks) {
+                                checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false)
+                            }
+                        }
                     }
                 }
             }.joinAll()
@@ -1045,7 +1056,7 @@ class AppState(private val app: Application) {
         } catch (e: Throwable) {
             null
         }
-        val awg = !dpi && plugin == null && wgE == "awg"
+        val awg = !dpi && plugin == null && (wgE == "awg" || wgE == "wg")
         var engine = CorePlugins.XRAY
         val outbound = if (dpi || plugin != null || awg) "{}" else try {
             val src = if (wgE == "xray" && Wg.isAwg(target.conf)) Wg.stripAwg(target.conf) else Plugins.effectiveConf(app, target.conf)
@@ -1077,7 +1088,7 @@ class AppState(private val app: Application) {
             .putExtra(FasdeqVpnService.EXTRA_DPI, dpi)
         if (awg) {
             val conf = try {
-                Plugins.awgConf(app, target.conf)
+                if (wgE == "wg") Wg.stripAwg(target.conf) else Plugins.awgConf(app, target.conf)
             } catch (e: Exception) {
                 error = e.message ?: "Неверная конфигурация"
                 return

@@ -78,6 +78,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,7 @@ sealed class Sheet {
     object Catalog : Sheet()
     data class PluginSettings(val key: String) : Sheet()
     object IconPick : Sheet()
+    object Apps : Sheet()
 }
 
 private fun parentOf(page: String): String = when (page) {
@@ -180,12 +182,22 @@ private fun depthOf(p: String): Int = when (p) {
     else -> 2
 }
 
-private fun cookie(cx: Float, cy: Float, r: Float, amp: Float, lobes: Int, phase: Float): Path {
+private fun cookie(cx: Float, cy: Float, r: Float, amp: Float, lobes: Int, phase: Float, kind: Int = 0): Path {
     val path = Path()
     val steps = 260
     for (i in 0..steps) {
         val t = i.toFloat() / steps * 6.2831855f
-        val rr = r * (1f + amp * cos(lobes * (t - phase)))
+        val rr = when (kind) {
+            1 -> r
+            2 -> {
+                val a = t - phase * 0.35f
+                val c = abs(cos(a))
+                val sn = abs(sin(a))
+                r * 1.06f / Math.pow(Math.pow(c.toDouble(), 4.0) + Math.pow(sn.toDouble(), 4.0), 0.25).toFloat()
+            }
+            3 -> r * (1f + amp * 2.4f * (abs(cos(lobes * (t - phase) / 2f)) - 0.5f))
+            else -> r * (1f + amp * cos(lobes * (t - phase)))
+        }
         val x = cx + rr * cos(t)
         val y = cy + rr * sin(t)
         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
@@ -195,14 +207,14 @@ private fun cookie(cx: Float, cy: Float, r: Float, amp: Float, lobes: Int, phase
 }
 
 @Composable
-fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, shape: Int = 0, lobes: Int = 9, ampK: Float = 0.062f, spin: Boolean = true, onClick: () -> Unit) {
     val on = status == "On"
     val busy = status == "Connecting" || status == "Stopping"
     val src = remember { MutableInteractionSource() }
     val pressed = src.collectIsPressedAsState().value
     val press = animateFloatAsState(if (pressed) 0.92f else 1f, spring(dampingRatio = 0.5f, stiffness = 450f), label = "press").value
     val speed = animateFloatAsState(if (busy) 3.2f else if (on) 0.45f else 0.2f, tween(900), label = "speed")
-    val ampBase = animateFloatAsState(if (busy) 0.085f else if (on) 0.05f else 0.062f, tween(700), label = "amp")
+    val ampBase = animateFloatAsState(if (busy) ampK * 1.4f else if (on) 0.05f else ampK, tween(700), label = "amp")
     val bg = animateColorAsState(
         if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
         tween(600), label = "bg"
@@ -214,11 +226,13 @@ fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, onClick: () -
     val haloColor = MaterialTheme.colorScheme.primary
     val phase = remember { mutableStateOf(0f) }
     val spd = rememberUpdatedState(speed.value)
+    val spinOn = rememberUpdatedState(spin)
+    val busyOn = rememberUpdatedState(busy)
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
             withFrameNanos { n ->
-                if (last != 0L) phase.value += (n - last) / 1_000_000_000f * spd.value
+                if (last != 0L && (spinOn.value || busyOn.value)) phase.value += (n - last) / 1_000_000_000f * spd.value
                 last = n
             }
         }
@@ -239,17 +253,17 @@ fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, onClick: () -
             val ph = phase.value
             val amp = ampBase.value + (if (busy) 0.012f * sin(ph * 3f) else 0.006f * sin(ph * 2f))
             if (on) {
-                drawPath(cookie(c, c, r0 * 1.17f, 0.075f, 9, -ph * 0.8f), haloColor.copy(alpha = 0.12f))
+                drawPath(cookie(c, c, r0 * 1.17f, ampK * 1.2f, lobes, -ph * 0.8f, shape), haloColor.copy(alpha = 0.12f))
             }
             val b = burst.value
             if (b < 1f) {
                 drawPath(
-                    cookie(c, c, r0 * (1f + 0.3f * b), amp, 9, ph),
+                    cookie(c, c, r0 * (1f + 0.3f * b), amp, lobes, ph, shape),
                     haloColor.copy(alpha = 0.5f * (1f - b)),
                     style = Stroke(3.dp.toPx())
                 )
             }
-            drawPath(cookie(c, c, r0, amp, 9, ph), bg)
+            drawPath(cookie(c, c, r0, amp, lobes, ph, shape), bg)
             drawCircle(Color.White.copy(alpha = 0.07f), r0 * 0.62f, Offset(c - r0 * 0.12f, c - r0 * 0.16f))
             val ic = r0 * 0.5f
             val sw = ic * 0.17f
@@ -276,7 +290,7 @@ private fun fmtDate(sec: Long): String = SimpleDateFormat("dd.MM.yyyy", Locale.g
 fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: () -> Unit) {
     val listState = rememberLazyListState()
     val compact = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 80
-    val btn = animateDpAsState(if (compact) 84.dp else 196.dp, tween(480), label = "btn").value
+    val btn = animateDpAsState(if (compact) 84.dp else s.btnSize.dp, tween(480), label = "btn").value
     val label = when (s.status) {
         "On" -> "Подключено"
         "Connecting" -> "Подключаюсь…"
@@ -312,7 +326,7 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
             }
         }
         Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            PowerButton(s.status, btn) {
+            PowerButton(s.status, btn, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {
                 when (s.status) {
                     "Off" -> a.requestConnect()
                     "On" -> a.call("disconnect")
@@ -354,7 +368,7 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
         ) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Серверы", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text("Серверы", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(end = 14.dp), maxLines = 1)
                     FilledTonalIconButton({ a.call("checkServices"); a.say("Проверяю сервисы…") }, Modifier.size(42.dp), enabled = !s.checking) {
                         if (s.checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         else Icon(painterResource(R.drawable.ic_shield), "Сервисы", Modifier.size(22.dp))
@@ -389,7 +403,7 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
                             }
                         }) { r ->
                             when (r) {
-                                is Row2.Head -> GroupHead(r, collapsed.value.contains(r.name), Modifier.animateItem(), {
+                                is Row2.Head -> GroupHead(r, s.localName, collapsed.value.contains(r.name), Modifier.animateItem(), {
                                     val next = HashSet(collapsed.value)
                                     if (!next.add(r.name)) next.remove(r.name)
                                     collapsed.value = next
@@ -428,7 +442,7 @@ fun RenameDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: 
 }
 
 @Composable
-private fun GroupHead(r: Row2.Head, folded: Boolean, modifier: Modifier, toggle: () -> Unit, more: () -> Unit) {
+private fun GroupHead(r: Row2.Head, local: String, folded: Boolean, modifier: Modifier, toggle: () -> Unit, more: () -> Unit) {
     val g = r.group
     val rot = animateFloatAsState(if (folded) -90f else 0f, tween(260), label = "rot").value
     Row(
@@ -440,7 +454,7 @@ private fun GroupHead(r: Row2.Head, folded: Boolean, modifier: Modifier, toggle:
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                (if (r.name.isEmpty()) "Мои серверы" else r.name) + " · " + r.count,
+                (if (r.name.isEmpty()) local.ifEmpty { "Мои серверы" } else r.name) + " · " + r.count,
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
@@ -491,10 +505,12 @@ private fun ServerRow(a: ComposeActivity, s: Snap, v: SrvUi, modifier: Modifier,
             Column(horizontalAlignment = Alignment.End) {
                 PingChip(s.pings[v.id])
                 val c = s.checks[v.id]
-                if (c != null) {
+                val pg = s.pings[v.id]
+                val dead = pg != null && !pg.busy && pg.ms == null
+                if (c != null || dead) {
                     Spacer(Modifier.height(5.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (i in 0 until s.serviceNames.size) ServiceIcon(i, checkColor(c.ms.getOrNull(i), c.busy), 14)
+                        for (i in 0 until s.serviceNames.size) ServiceIcon(i, if (dead) checkColor(-1, false) else checkColor(c?.ms?.getOrNull(i), c?.busy == true), 14)
                     }
                 }
             }
@@ -545,8 +561,8 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_apps, "Плагины и ядра", "sing-box, Xray, WireGuard, свои плагины") { go("plugins") }
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
-        CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.4, создатели, канал") { go("about") }
+        if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.5, создатели, канал") { go("about") }
     }
 }
 
@@ -554,7 +570,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
 fun SettingsPage(a: ComposeActivity, s: Snap, page: String, open: (Sheet) -> Unit, onBack: () -> Unit) {
     when (page) {
         "look" -> LookPage(a, s, open, onBack)
-        "connect" -> ConnectPage(a, s, onBack)
+        "connect" -> ConnectPage(a, s, open, onBack)
         "plugins" -> PluginsPage(a, s, open, onBack)
         "ping" -> PingPage(a, s, onBack)
         "subs" -> SubsPage(a, s, open, onBack)

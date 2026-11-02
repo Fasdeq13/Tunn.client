@@ -48,6 +48,7 @@ class FasdeqVpnService : VpnService() {
     @Volatile private var retries = 0
     @Volatile private var recovering = false
     @Volatile private var connectedMono = 0L
+    @Volatile private var childPort = 0
     @Volatile private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var wake: PowerManager.WakeLock? = null
 
@@ -295,6 +296,7 @@ class FasdeqVpnService : VpnService() {
                     }
                     if (child === process && !stopping && !halted) recover("Ядро $label остановилось")
                 }.start()
+                childPort = port
                 return port
             } catch (e: Exception) {
                 Thread.sleep(150)
@@ -308,6 +310,7 @@ class FasdeqVpnService : VpnService() {
             synchronized(lock) {
                 try {
                     closeCore(3000)
+                    childPort = 0
                     generation++
                     stopping = false
                     val gen = generation
@@ -361,8 +364,9 @@ class FasdeqVpnService : VpnService() {
                     core.startLoop(config, fd)
                     connectedAt = System.currentTimeMillis()
                     connectedMono = SystemClock.elapsedRealtime()
-                            registerNet()
+                    registerNet()
                     acquireWake()
+                    healthWatch(gen) { null }
                     VpnBridge.write(this, true, serverId)
                     VpnBridge.send(this, true, null)
                     getSystemService(NotificationManager::class.java)
@@ -472,6 +476,7 @@ class FasdeqVpnService : VpnService() {
         connectedAt = System.currentTimeMillis()
                     connectedMono = SystemClock.elapsedRealtime()
         tunnelWatch(generation) { pluginStats(handle) }
+        healthWatch(generation) { pluginStats(handle) }
         registerNet()
         acquireWake()
         VpnBridge.write(this, true, serverId)
@@ -531,6 +536,7 @@ class FasdeqVpnService : VpnService() {
         connectedAt = System.currentTimeMillis()
                     connectedMono = SystemClock.elapsedRealtime()
         tunnelWatch(generation) { Awg.stats(handle) }
+        healthWatch(generation) { Awg.stats(handle) }
         registerNet()
         acquireWake()
         VpnBridge.write(this, true, serverId)
@@ -555,6 +561,63 @@ class FasdeqVpnService : VpnService() {
                     if (v.optLong("hs", 0L) > 0L) return@Thread
                     if (SystemClock.elapsedRealtime() - begin > 25_000L) {
                         halt("Нет рукопожатия с сервером. Проверьте ключи, порт и параметры AmneziaWG (Jc, S1, S2, H1-H4)")
+                        return@Thread
+                    }
+                }
+            } catch (e: Throwable) {
+            }
+        }.start()
+    }
+
+
+    private fun socksProbe(port: Int): Boolean = try {
+        Socket().use { sock ->
+            sock.soTimeout = 8000
+            sock.connect(InetSocketAddress("127.0.0.1", port), 3000)
+            val o = sock.getOutputStream()
+            val i = sock.getInputStream()
+            o.write(byteArrayOf(5, 1, 0)); o.flush()
+            val a = ByteArray(2)
+            if (i.read(a) != 2 || a[1].toInt() != 0) return@use false
+            val host = "cp.cloudflare.com".toByteArray()
+            o.write(byteArrayOf(5, 1, 0, 3, host.size.toByte()) + host + byteArrayOf(0, 80)); o.flush()
+            val r = ByteArray(10)
+            if (i.read(r) < 2 || r[1].toInt() != 0) return@use false
+            o.write("GET /generate_204 HTTP/1.1\r\nHost: cp.cloudflare.com\r\nConnection: close\r\n\r\n".toByteArray()); o.flush()
+            i.read() >= 0
+        }
+    } catch (e: Throwable) {
+        false
+    }
+
+    private fun healthWatch(gen: Int, stats: () -> JSONObject?) {
+        Thread {
+            var bad = 0
+            var lastRx = -1L
+            var lastTx = -1L
+            var stuck = 0
+            try {
+                while (gen == generation && !stopping && !halted && !userStop) {
+                    Thread.sleep(if (bad > 0 || stuck > 0) 15_000L else 45_000L)
+                    if (gen != generation || stopping || halted || userStop) return@Thread
+                    val port = childPort
+                    var ok = true
+                    if (port > 0) {
+                        ok = socksProbe(port) || socksProbe(port)
+                    } else {
+                        val v = stats() ?: continue
+                        val rx = v.optLong("rx", 0L)
+                        val tx = v.optLong("tx", 0L)
+                        if (lastRx >= 0 && tx - lastTx > 2048 && rx - lastRx < 64) stuck++ else stuck = 0
+                        lastRx = rx
+                        lastTx = tx
+                        ok = stuck < 4
+                    }
+                    if (ok) {
+                        bad = 0
+                        if (port > 0) stuck = 0
+                    } else if (++bad >= 3 || (port <= 0 && stuck >= 4)) {
+                        recover("Туннель перестал отвечать, переподключаюсь")
                         return@Thread
                     }
                 }

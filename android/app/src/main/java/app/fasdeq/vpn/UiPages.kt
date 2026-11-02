@@ -107,26 +107,40 @@ fun HexField(current: String, onValid: (String) -> Unit) {
 fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Оформление", onBack) {
         Section("Тема") {
-            ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme) { a.set("theme", it) }
-            SwitchRow("Цвета системы", "Палитра из обоев, Android 12 и новее. Выключите, чтобы выбрать свой цвет", s.dynamic) { a.set("dynamic", it) }
-            SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled) { a.set("amoled", it) }
+            ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme, enabled = !s.bgOn) { a.set("theme", it) }
+            ChoiceRow("Цвета", listOf("Системные", "Свои"), if (s.dynamic) 0 else 1, enabled = !s.bgOn) { a.set("dynamic", it == 0) }
+            SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled, enabled = !s.bgOn) { a.set("amoled", it) }
         }
         Section("Цвет акцента") {
-            SwatchGrid(accents, s.accentHex) {
-                a.set("accentHex", it)
-                a.set("dynamic", false)
-            }
-            HexField(s.accentHex) {
-                a.set("accentHex", it)
-                a.set("dynamic", false)
+            Dim(!s.dynamic || s.bgOn) {
+                Column {
+                    SwatchGrid(accents, s.accentHex) {
+                        a.set("accentHex", it)
+                        a.set("dynamic", false)
+                    }
+                    HexField(s.accentHex) {
+                        a.set("accentHex", it)
+                        a.set("dynamic", false)
+                    }
+                }
             }
         }
         Section("Фон") {
-            SwitchRow("Свой цвет фона", "Карточки и текст подстроятся под цвет. Светлый фон включает светлую тему", s.bgOn) { a.set("bgOn", it) }
+            SwitchRow("Свой цвет фона", "Пока включён, тема, системные цвета и чёрный фон неактивны, но их значения сохраняются", s.bgOn) { a.set("bgCustom", it) }
             if (s.bgOn) {
                 SwatchGrid(backgrounds, s.bgHex) { a.set("bgHex", it) }
                 HexField(s.bgHex) { a.set("bgHex", it) }
             }
+        }
+        Section("Кнопка питания") {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                PowerButton(s.status, 120.dp, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {}
+            }
+            ChoiceRow("Форма", listOf("Печенька", "Круг", "Квадрат", "Цветок"), s.btnShape) { a.set("btnShape", it) }
+            SliderRow("Лепестки", s.btnLobes.toFloat(), 3f, 16f, "${s.btnLobes}", enabled = s.btnShape == 0 || s.btnShape == 3) { a.set("btnLobes", it.toInt()) }
+            SliderRow("Выраженность", s.btnAmp, 0f, 0.14f, String.format("%.0f%%", s.btnAmp * 700f), enabled = s.btnShape == 0 || s.btnShape == 3) { a.set("btnAmp", it.toDouble()) }
+            SliderRow("Размер", s.btnSize.toFloat(), 140f, 260f, "${s.btnSize} dp") { a.set("btnSize", it.toInt()) }
+            SwitchRow("Вращение", "Кнопка медленно вращается", s.btnSpin) { a.set("btnSpin", it) }
         }
         Section("Значок") {
             BaseRow("Иконка приложения", "Варианты и своя картинка", { open(Sheet.IconPick) })
@@ -135,7 +149,7 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
 }
 
 @Composable
-fun ConnectPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
+fun ConnectPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Подключение", onBack) {
         Section("Основное") {
             SwitchRow("Подключаться при запуске", null, s.autoConnect) { a.set("autoConnect", it) }
@@ -158,7 +172,10 @@ fun ConnectPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
         }
         Section("Приложения") {
             ChoiceRow("Через VPN идут", listOf("Все", "Исключить", "Только"), s.appMode) { a.set("tuning.am", it) }
-            if (s.appMode != 0) TextRow("Пакеты через запятую", s.apps, "org.telegram.messenger, com.discord", false) { a.set("tuning.apps", it) }
+            if (s.appMode != 0) {
+                val n = s.apps.split(',', '\n', ' ').count { it.isNotBlank() }
+                BaseRow("Выбрать приложения", if (n == 0) "Ничего не выбрано" else "Выбрано: $n", { open(Sheet.Apps) })
+            }
         }
     }
 }
@@ -276,7 +293,7 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.4 · создатель fasdeq13")
+            BaseRow("Tunn", "Версия 3.5 · создатель fasdeq13")
         }
         Section("Участники") {
             BaseRow("Fasdeq13", "Создатель", { a.call("open", "https://github.com/Fasdeq13/FasdeqVPN") })
@@ -288,5 +305,17 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
                 ServiceIcon(1, MaterialTheme.colorScheme.primary, 26)
             })
         }
+    }
+}
+
+@Composable
+fun SliderRow(title: String, value: Float, min: Float, max: Float, label: String, enabled: Boolean = true, onDone: (Float) -> Unit) {
+    val v = remember(value) { mutableStateOf(value) }
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        androidx.compose.material3.Slider(v.value, { v.value = it }, valueRange = min..max, enabled = enabled, onValueChangeFinished = { onDone(v.value) })
     }
 }

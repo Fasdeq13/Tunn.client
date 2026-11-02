@@ -50,7 +50,7 @@ fun SheetHost(a: ComposeActivity, s: Snap, sheet: Sheet?, onClose: () -> Unit, o
             when (sheet) {
                 is Sheet.Add -> AddSheet(a, onClose)
                 is Sheet.Server -> ServerSheet(a, s, sheet.id, onClose)
-                is Sheet.Group -> GroupSheet(a, sheet.name, onClose)
+                is Sheet.Group -> GroupSheet(a, sheet.name, s.localName, onClose)
                 is Sheet.SbCores -> SbSheet(a, s)
                 is Sheet.XrayCores -> XraySheet(a, s)
                 is Sheet.Plugin -> PluginSheet(a, s, sheet.id, onSwitch)
@@ -60,6 +60,7 @@ fun SheetHost(a: ComposeActivity, s: Snap, sheet: Sheet?, onClose: () -> Unit, o
                 is Sheet.Catalog -> CatalogSheet(a, s)
                 is Sheet.PluginSettings -> PluginSettingsSheet(a, s, sheet.key, onClose)
                 is Sheet.IconPick -> IconSheet(a, s)
+                is Sheet.Apps -> AppPickerSheet(a, s)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -155,14 +156,14 @@ fun ServerSheet(a: ComposeActivity, s: Snap, sid: String, onClose: () -> Unit) {
     Text(if (isWg) "Движок WireGuard" else "Ядро", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     if (isWg) {
         Text(
-            "Авто: AmneziaWG-конфиги идут через движок AmneziaWG, обычный WireGuard через Xray. Через Xray параметры Amnezia отбрасываются.",
+            "Авто: обычный WireGuard идёт через отдельный движок WireGuard, конфиги с параметрами Amnezia через AmneziaWG. Xray нужен только если выбрать его вручную.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
     ChoiceRow(
-        "", listOf("Авто", if (isWg) "AmneziaWG" else "sing-box", "Xray"),
-        when (eng) { "" -> 0; "xray" -> 2; else -> 1 }
-    ) { i -> set(when (i) { 0 -> ""; 1 -> if (isWg) "awg" else "singbox"; else -> "xray" }, "") }
+        "", if (isWg) listOf("Авто", "WireGuard", "AmneziaWG", "Xray") else listOf("Авто", "sing-box", "Xray"),
+        if (isWg) when (eng) { "" -> 0; "wg" -> 1; "awg" -> 2; else -> 3 } else when (eng) { "" -> 0; "xray" -> 2; else -> 1 }
+    ) { i -> set(if (isWg) (when (i) { 0 -> ""; 1 -> "wg"; 2 -> "awg"; else -> "xray" }) else (when (i) { 0 -> ""; 1 -> "singbox"; else -> "xray" }), "") }
     if (eng == "xray") {
         Text("Версия Xray", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         VerRow(v.ver.isEmpty(), "Активная версия", if (s.xrayActive.isNotEmpty()) "Выбрана в настройках" else "Встроенное", onPick = { set(eng, "") })
@@ -188,10 +189,11 @@ fun ServerSheet(a: ComposeActivity, s: Snap, sid: String, onClose: () -> Unit) {
 }
 
 @Composable
-fun GroupSheet(a: ComposeActivity, name: String, onClose: () -> Unit) {
+fun GroupSheet(a: ComposeActivity, name: String, local: String, onClose: () -> Unit) {
     val rename = remember { mutableStateOf(false) }
-    SheetTitle(if (name.isEmpty()) "Мои серверы" else name)
+    SheetTitle(if (name.isEmpty()) local.ifEmpty { "Мои серверы" } else name)
     BaseRow("Проверить пинг", null, { if (name.isEmpty()) a.call("ping") else a.call("pingGroup", name); onClose() })
+    if (name.isEmpty()) BaseRow("Переименовать", "Только название группы", { rename.value = true })
     if (name.isNotEmpty()) {
         BaseRow("Обновить подписку", null, {
             a.say("Обновляю…")
@@ -203,7 +205,13 @@ fun GroupSheet(a: ComposeActivity, name: String, onClose: () -> Unit) {
         BaseRow("Удалить группу", "Вместе с серверами", { a.call("removeGroup", name); onClose() })
     }
     if (rename.value) {
-        RenameDialog("Название группы", name, { rename.value = false }) { n ->
+        RenameDialog("Название группы", name.ifEmpty { local.ifEmpty { "Мои серверы" } }, { rename.value = false }) { n ->
+            if (name.isEmpty()) {
+                a.set("localName", n.trim())
+                rename.value = false
+                onClose()
+                return@RenameDialog
+            }
             a.call("renameGroup", JSONObject().put("old", name).put("name", n)) { r ->
                 val e = r.optString("error")
                 if (e.isNotEmpty()) a.say(e)
@@ -314,7 +322,7 @@ fun PluginSheet(a: ComposeActivity, s: Snap, id: String, onSwitch: (Sheet) -> Un
     }
     if (p.id == "wireguard" || p.id == "awg") {
         Spacer(Modifier.height(8.dp))
-        ChoiceRow("Движок WireGuard", listOf("Авто", "AmneziaWG", "Обычный"), s.wgMode) { a.call("awgMode", it) }
+        ChoiceRow("Движок WireGuard", listOf("Авто", "AmneziaWG", "WireGuard"), s.wgMode) { a.call("awgMode", it) }
     }
     if (p.id == "dpi") {
         Spacer(Modifier.height(8.dp))
@@ -330,21 +338,45 @@ fun PluginSheet(a: ComposeActivity, s: Snap, id: String, onSwitch: (Sheet) -> Un
 @Composable
 fun HwidSheet(a: ComposeActivity, onClose: () -> Unit) {
     val hwid = remember { mutableStateOf("…") }
+    val os = remember { mutableStateOf("") }
+    val ver = remember { mutableStateOf("") }
+    val model = remember { mutableStateOf("") }
     remember {
-        a.call("hwid") { r -> hwid.value = r.optString("hwid").ifEmpty { "—" } }
+        a.call("hwidInfo") { r ->
+            hwid.value = r.optString("hwid").ifEmpty { "—" }
+            os.value = r.optString("os")
+            ver.value = r.optString("ver")
+            model.value = r.optString("model")
+        }
         0
     }
-    SheetTitle("HWID", "Отправляется провайдеру при загрузке подписки. После сброса у подписки может понадобиться заново привязать устройство.")
+    SheetTitle("HWID и устройство", "Отправляется провайдеру при загрузке подписки. После сброса HWID у подписки может понадобиться заново привязать устройство.")
     Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
         Text(hwid.value, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
     }
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(os.value, { os.value = it }, label = { Text("Операционная система") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(ver.value, { ver.value = it }, label = { Text("Версия ОС") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(model.value, { model.value = it }, label = { Text("Имя устройства") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton({
+            a.call("hwidDefaults")
+            a.call("hwidInfo") { r -> os.value = r.optString("os"); ver.value = r.optString("ver"); model.value = r.optString("model") }
+            a.say("Значения устройства сброшены")
+        }) { Text("По умолчанию") }
+        TextButton({
             a.call("hwidReset") { r -> hwid.value = r.optString("hwid").ifEmpty { "—" }; a.say("HWID сброшен") }
-        }) { Text("Сбросить") }
+        }) { Text("Сбросить HWID") }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton({ a.call("copy", hwid.value); a.say("HWID скопирован") }) { Text("Копировать") }
-        Button(onClose) { Text("Готово") }
+        Button({
+            a.call("hwidSet", JSONObject().put("os", os.value.trim()).put("ver", ver.value.trim()).put("model", model.value.trim()))
+            onClose()
+        }) { Text("Сохранить") }
     }
 }
 

@@ -91,30 +91,24 @@ object CorePlugins {
     private fun wgWant(c: Context, conf: String, ov: String): String {
         val mode = Plugins.wgMode(c)
         return when {
-            ov == "awg" || ov == "xray" -> ov
+            ov == "wg" || ov == "awg" || ov == "xray" -> ov
             mode == 1 -> "awg"
-            mode == 2 -> "xray"
+            mode == 2 -> "wg"
             Wg.isAwg(conf) -> "awg"
-            else -> if (usable(c, XRAY)) "xray" else "awg"
+            else -> "wg"
         }
     }
 
-    fun wgEngine(c: Context, conf: String, ov: String): String? {
-        val awgConf = Wg.isAwg(conf)
-        val want = wgWant(c, conf, ov)
-        if (want == "awg") return if (usable(c, AWG) && (awgConf || usable(c, WG))) "awg" else null
-        return if (usable(c, XRAY) && usable(c, WG)) "xray" else null
+    fun wgEngine(c: Context, conf: String, ov: String): String? = when (wgWant(c, conf, ov)) {
+        "awg" -> if (usable(c, AWG)) "awg" else null
+        "wg" -> if (usable(c, WG)) "wg" else null
+        else -> if (usable(c, XRAY)) "xray" else null
     }
 
-    fun wgReason(c: Context, conf: String, ov: String): String {
-        val awgConf = Wg.isAwg(conf)
-        val want = wgWant(c, conf, ov)
-        if (want == "awg") {
-            if (!usable(c, AWG)) return "Включите плагин AmneziaWG в плагинах"
-            return "Включите плагин WireGuard в плагинах"
-        }
-        if (!usable(c, XRAY)) return "Для этого сервера выбрано ядро Xray, включите его в плагинах"
-        return if (awgConf) "Для ядра Xray включите плагин WireGuard (параметры Amnezia будут отброшены)" else "Включите плагин WireGuard в плагинах"
+    fun wgReason(c: Context, conf: String, ov: String): String = when (wgWant(c, conf, ov)) {
+        "awg" -> "Включите плагин AmneziaWG в плагинах"
+        "wg" -> "Включите плагин WireGuard в плагинах"
+        else -> "Для этого сервера выбрано ядро Xray, включите его в плагинах"
     }
 
     fun switchTo(c: Context, id: String) {
@@ -133,7 +127,7 @@ object CorePlugins {
         }
         add(SINGBOX, "sing-box", "Основное ядро по умолчанию: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP", true)
         add(XRAY, "Xray", "Подхватывает то, что не поддерживает sing-box (например XHTTP)", true)
-        add(WG, "WireGuard", "Отдельный плагин для WireGuard-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
+        add(WG, "WireGuard", "Отдельный движок WireGuard. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(AWG, "AmneziaWG", "Отдельный плагин для AmneziaWG-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)
         add(DPI, DPI_NAME, "Один общий сервер без выхода в сеть: обход DPI по принципу zapret и tg-ws-proxy", false)

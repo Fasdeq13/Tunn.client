@@ -102,14 +102,14 @@ build_windows() {
   local f
   for f in desktop/target/x86_64-pc-windows-gnu/release/tunn.exe desktop/target/release/tunn.exe; do
     if [ -f "$f" ]; then
-      cp "$f" dist/Tunn-3.4-windows.exe
+      cp "$f" dist/Tunn-3.5-windows.exe
       cp desktop/assets/WebView2Loader.dll dist/WebView2Loader.dll
       if command -v zip >/dev/null 2>&1; then
-        rm -f dist/Tunn-3.4-windows.zip
-        (cd dist && cp Tunn-3.4-windows.exe Tunn.exe && zip -q Tunn-3.4-windows.zip Tunn.exe WebView2Loader.dll && rm -f Tunn.exe)
-        say "windows: dist/Tunn-3.4-windows.zip (Tunn.exe + WebView2Loader.dll, keep them together)"
+        rm -f dist/Tunn-3.5-windows.zip
+        (cd dist && cp Tunn-3.5-windows.exe Tunn.exe && zip -q Tunn-3.5-windows.zip Tunn.exe WebView2Loader.dll && rm -f Tunn.exe)
+        say "windows: dist/Tunn-3.5-windows.zip (Tunn.exe + WebView2Loader.dll, keep them together)"
       else
-        say "windows: dist/Tunn-3.4-windows.exe, keep dist/WebView2Loader.dll next to it"
+        say "windows: dist/Tunn-3.5-windows.exe, keep dist/WebView2Loader.dll next to it"
       fi
       return 0
     fi
@@ -166,7 +166,7 @@ build_android() {
 
   mkdir -p android/app/src/main/assets
   mkdir -p android/app/src/main/assets/builtin-plugins
-  cp plugins/builtin/*.zip android/app/src/main/assets/builtin-plugins/
+  ls plugins/builtin/*.zip >/dev/null 2>&1 && cp plugins/builtin/*.zip android/app/src/main/assets/builtin-plugins/ || true
 
   if [ "${SINGBOX:-1}" = 1 ]; then
     say "sing-box core"
@@ -228,8 +228,8 @@ build_android() {
   if [ "$MODE" = play ]; then
     local aab; aab="$(find android/app/build/outputs/bundle -name '*.aab' | head -1)"
     [ -n "$aab" ] || die "AAB not found"
-    cp "$aab" "dist/Tunn-3.4-play.aab"
-    say "AAB for Google Play: $ROOT/dist/Tunn-3.4-play.aab (signed with your upload key; keep $HOME/.fasdeq/release.jks safe)"
+    cp "$aab" "dist/Tunn-3.5-play.aab"
+    say "AAB for Google Play: $ROOT/dist/Tunn-3.5-play.aab (signed with your upload key; keep $HOME/.fasdeq/release.jks safe)"
     return 0
   fi
   local apk
@@ -237,8 +237,8 @@ build_android() {
   [ -n "$apk" ] || die "APK not found"
   local asg; asg="$(find "${sdk:-$CACHE/android-sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)"
   if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
-  cp "$apk" "dist/Tunn-3.4-$MODE.apk"
-  say "APK: $ROOT/dist/Tunn-3.4-$MODE.apk"
+  cp "$apk" "dist/Tunn-3.5-$MODE.apk"
+  say "APK: $ROOT/dist/Tunn-3.5-$MODE.apk"
 }
 
 case "$TARGET" in

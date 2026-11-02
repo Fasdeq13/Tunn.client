@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -303,6 +304,20 @@ fun ServiceIcon(index: Int, color: Color, size: Int) {
                 }
                 drawPath(tri, hole)
             }
+        }
+    }
+}
+
+@Composable
+fun Dim(active: Boolean, content: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.Box(Modifier.alpha(if (active) 1f else 0.4f)) {
+        content()
+        if (!active) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.matchParentSize().pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                }
+            )
         }
     }
 }

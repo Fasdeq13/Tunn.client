@@ -275,6 +275,13 @@ object Plugins {
 
     fun seedBuiltins(context: Context) {
         val p = prefs(context)
+        if (!p.getBoolean("purge_happ_ui", false)) {
+            try {
+                for (x in list(context)) if (x.id == "happ-ui") delete(context, x.key)
+            } catch (e: Throwable) {
+            }
+            p.edit().putBoolean("purge_happ_ui", true).apply()
+        }
         val names = try {
             context.assets.list("builtin-plugins")?.filter { it.endsWith(".zip") }
         } catch (e: Throwable) {
@@ -331,10 +338,12 @@ object Plugins {
 
     fun usesAwg(context: Context, conf: String): Boolean {
         if (!Wg.isConf(conf)) return false
-        return CorePlugins.wgEngine(context, conf, "") == "awg"
+        val e = CorePlugins.wgEngine(context, conf, "")
+        return e == "awg" || e == "wg"
     }
 
     fun awgConf(context: Context, conf: String): String {
+        if (CorePlugins.wgEngine(context, conf, "") == "wg") return Wg.stripAwg(conf)
         val params = awgParams(context)
         return Wg.applyParams(conf, params, params.optBoolean("_force", false) || wgMode(context) == 1)
     }

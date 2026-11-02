@@ -54,6 +54,7 @@ object Updates {
     }
 
     suspend fun check(context: Context, force: Boolean) {
+        if (BuildConfig.FDROID) return
         val now = System.currentTimeMillis()
         if (!force && now - checkedAt < 6L * 3600_000L) return
         val current = currentVersion(context)
