@@ -235,7 +235,8 @@ fun PingChip(p: PingUi?) {
 
 fun checkColor(ms: Int?, busy: Boolean): Color = when {
     busy -> Color(0xFFE0A52E)
-    ms == null -> Color(0xFF8A9390)
+    ms == null || ms == -3 || ms == -4 -> Color(0xFF8A9390)
+    ms == -2 -> Color(0xFFE0A52E)
     ms > 0 -> Color(0xFF4CAF7A)
     else -> Color(0xFFD9645A)
 }

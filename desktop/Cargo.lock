@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "error-code"
-version = "3.5.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
@@ -858,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "fasdeq-core"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "base64 0.22.1",
  "percent-encoding",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-crate"
-version = "3.5.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
@@ -3593,7 +3593,7 @@ dependencies = [
 
 [[package]]
 name = "tunn"
-version = "3.5.0"
+version = "3.6.0"
 dependencies = [
  "arboard",
  "auto-launch",
@@ -3688,7 +3688,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "3.5.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cde93ff05758a36a851a398a772b0b79a82fbe3c186a46f2696baaeaf84c966b"
 dependencies = [

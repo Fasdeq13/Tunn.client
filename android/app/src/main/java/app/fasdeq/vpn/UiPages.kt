@@ -293,7 +293,7 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.5 · создатель fasdeq13")
+            BaseRow("Tunn", "Версия 3.6 · создатель fasdeq13")
         }
         Section("Участники") {
             BaseRow("Fasdeq13", "Создатель", { a.call("open", "https://github.com/Fasdeq13/FasdeqVPN") })

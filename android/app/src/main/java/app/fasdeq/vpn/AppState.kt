@@ -323,9 +323,13 @@ class AppState(private val app: Application) {
             null
         }
         if (plugin != null) return null
-        if (Plugins.usesAwg(app, server.conf)) return null
+        if (Wg.isConf(server.conf)) {
+            val ov = CorePlugins.serverCore(app, server.id)
+            if (Wg.isAwg(server.conf) && ov != "xray") return null
+        }
         return try {
-            val ob = Links.parse(Plugins.effectiveConf(app, server.conf)).outbound
+            val src = if (Wg.isConf(server.conf) && Wg.isAwg(server.conf)) Wg.stripAwg(server.conf) else Plugins.effectiveConf(app, server.conf)
+            val ob = Links.parse(src).outbound
             if (ob.optString("protocol") == "tuic") return null
             Services.probeConfig(ob)
         } catch (e: Exception) {
@@ -340,9 +344,16 @@ class AppState(private val app: Application) {
         val list = only ?: servers.toList()
         if (list.isEmpty()) return
         checkingServices = true
-        list.forEach { checks[it.id] = (checks[it.id] ?: ServiceCheck()).copy(busy = true) }
+        list.forEach { checks[it.id] = ServiceCheck(busy = true) }
         val unsupported = AtomicBoolean(false)
         scope.launch {
+            val unpinged = list.filter { it.conf != CorePlugins.DPI_CONF && !Wg.isConf(it.conf) && pings[it.id] == null }
+            if (unpinged.isNotEmpty()) {
+                try {
+                    ping(unpinged).join()
+                } catch (e: Exception) {
+                }
+            }
             val gate = Semaphore(8)
             val saver = launch(Dispatchers.IO) {
                 while (isActive) {
@@ -355,7 +366,7 @@ class AppState(private val app: Application) {
                     launch(Dispatchers.IO) {
                         gate.withPermit {
                             val pg = pings[server.id]
-                            val dead = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE
+                            val dead = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE && !Wg.isConf(server.conf) && server.conf != CorePlugins.DPI_CONF
                             if (dead) {
                                 synchronized(checks) { checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false) }
                                 return@withPermit
@@ -795,7 +806,7 @@ class AppState(private val app: Application) {
                             PingResult(tcp = Ping.FAIL)
                         }
                         pings[server.id] = result
-                        if (result.best() == Int.MAX_VALUE && checks.containsKey(server.id)) {
+                        if (result.best() == Int.MAX_VALUE && checks.containsKey(server.id) && !Wg.isConf(server.conf)) {
                             synchronized(checks) {
                                 checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false)
                             }
