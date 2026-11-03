@@ -301,7 +301,6 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
             BaseRow("Tunn", "Версия 3.8 · создатель fasdeq13", {
-                // 3 taps within 5 seconds
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }

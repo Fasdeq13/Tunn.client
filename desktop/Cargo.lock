@@ -4629,14 +4629,6 @@ dependencies = [
 [[package]]
 name = "slint-macros"
 version = "1.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35e74b13d20884dc480ce37d0fabbf02cb4bc0df2a595434feac96ca7c2a0f15"
-dependencies = [
- "i-slint-compiler",
- "proc-macro2",
- "quote",
- "spin_on",
-]
 
 [[package]]
 name = "slotmap"

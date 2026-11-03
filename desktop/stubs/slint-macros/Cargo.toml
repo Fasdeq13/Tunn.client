@@ -1,0 +1,5 @@
+[package]
+name = "slint-macros"
+version = "1.18.1"
+edition = "2021"
+description = "Stand-in for the slint! macro crate (Tunn only uses compiled .slint files, never the macro)"

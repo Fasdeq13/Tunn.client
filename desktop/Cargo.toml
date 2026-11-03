@@ -40,3 +40,6 @@ strip = true
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 sha2 = "0.10"
+
+[patch.crates-io]
+slint-macros = { path = "stubs/slint-macros" }
