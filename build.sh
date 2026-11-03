@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Tunn 3.8 build.
+#   ./build.sh            - Android APK + desktop binary
+#   ./build.sh android    - Android only
+#   ./build.sh desktop    - desktop only (for the OS you run on)
+#   ./build.sh windows    - desktop .exe; on Linux/macOS cross-compiles with mingw, in Git Bash/MSYS builds natively (MSVC or GNU toolchain)
+#   ./build.sh android play       - signed .aab for Google Play
+#   ./build.sh android release   - release APK (set KS_PATH, KS_PASS, KS_ALIAS to sign it)
+# Cache for SDK/NDK/Gradle: $FQ_CACHE (default ./.fqbuild). Output goes to ./dist.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +27,7 @@ mkdir -p "$CACHE" dist
 say() { echo ">> $*"; }
 die() { echo "!! $*" >&2; exit 1; }
 
+# NixOS: downloaded SDK/NDK/Gradle binaries need an FHS layout, shell.nix provides one
 if [ -z "${TUNN_FHS:-}" ] && [ -e /etc/NIXOS ]; then
   command -v nix-shell >/dev/null 2>&1 || die "nix-shell not found"
   say "NixOS: entering FHS environment from shell.nix (first run downloads packages)"
@@ -28,6 +37,7 @@ fi
 
 case "$(uname -s)" in Linux) OS=linux ;; Darwin) OS=mac ;; MINGW*|MSYS*|CYGWIN*) OS=win ;; *) die "unsupported OS" ;; esac
 
+# ---------- common tools ----------
 if command -v pacman >/dev/null 2>&1; then
   NEED=()
   for c in git curl unzip; do command -v "$c" >/dev/null 2>&1 || NEED+=("$c"); done
@@ -80,10 +90,15 @@ fi
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
+# Cargo output goes to an ASCII-only path: rustc fails to load proc-macro crates (slint-macros) from a
+# non-ASCII project folder such as ~/Загрузки ("can't find crate for slint_macros")
+TDIR="${TUNN_TARGET:-$HOME/.cache/tunn-target}"
+export CARGO_TARGET_DIR="$TDIR"
+
 build_desktop() {
   say "desktop (cargo build --release)"
   (cd desktop && cargo build --release)
-  for f in desktop/target/release/tunn desktop/target/release/tunn.exe; do
+  for f in "$TDIR/release/tunn" "$TDIR/release/tunn.exe"; do
     [ -f "$f" ] && cp "$f" dist/ && say "desktop: dist/$(basename "$f")"
   done
   return 0
@@ -100,7 +115,7 @@ build_windows() {
     (cd desktop && CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc cargo build --release --target x86_64-pc-windows-gnu)
   fi
   local f
-  for f in desktop/target/x86_64-pc-windows-gnu/release/tunn.exe desktop/target/release/tunn.exe; do
+  for f in "$TDIR/x86_64-pc-windows-gnu/release/tunn.exe" "$TDIR/release/tunn.exe"; do
     if [ -f "$f" ]; then
       cp "$f" dist/Tunn-3.8-windows.exe
       say "windows: dist/Tunn-3.8-windows.exe"
@@ -112,6 +127,7 @@ build_windows() {
 
 build_android() {
 
+  # --- Android SDK ---
   local sdk=""
   for d in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk" "$HOME/.local/lib/android/sdk" \
            "$HOME/Library/Android/sdk" "$HOME/Downloads/v2rayng/.tunnbuild/android-sdk" "$CACHE/android-sdk"; do
@@ -136,6 +152,7 @@ build_android() {
   export ANDROID_NDK_HOME="$ndk"
   printf 'sdk.dir=%s\n' "$sdk" > android/local.properties
 
+  # --- Rust native library (libfasdeq_native.so) ---
   say "native core (cargo-ndk)"
   rustup target add aarch64-linux-android armv7-linux-androideabi >/dev/null
   command -v cargo-ndk >/dev/null 2>&1 || cargo install cargo-ndk --locked
@@ -143,6 +160,7 @@ build_android() {
   rm -rf "$jni"; mkdir -p "$jni"
   (cd android-native && cargo ndk -t arm64-v8a -t armeabi-v7a -o "$jni" build --release)
 
+  # --- Xray core AAR (prebuilt release of AndroidLibXrayLite) ---
   mkdir -p android/app/libs
   if [ ! -f android/app/libs/libv2ray.aar ]; then
     local tag="$XRAY_TAG"
@@ -157,10 +175,13 @@ build_android() {
     curl -fL --retry 3 -o android/app/libs/libv2ray.aar "https://github.com/2dust/AndroidLibXrayLite/releases/download/$tag/libv2ray.aar"
   fi
 
+  # --- assets ---
   mkdir -p android/app/src/main/assets
+  # plugins shipped inside the app (installed on first start, "defaultEnabled": false keeps them off)
   mkdir -p android/app/src/main/assets/builtin-plugins
   ls plugins/builtin/*.zip >/dev/null 2>&1 && cp plugins/builtin/*.zip android/app/src/main/assets/builtin-plugins/ || true
 
+  # optional: bundle the sing-box core (needed by the sing-box and TUIC plugins). SINGBOX=0 ./build.sh android skips it
   if [ "${SINGBOX:-1}" = 1 ]; then
     say "sing-box core"
     local rel; rel="$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest || true)"
@@ -177,6 +198,7 @@ build_android() {
     done
   fi
 
+  # --- Gradle ---
   local gradle
   if [ -x android/gradlew ]; then
     gradle="$ROOT/android/gradlew"
