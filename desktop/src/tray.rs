@@ -59,3 +59,37 @@ pub fn build() -> Result<tray_icon::TrayIcon, String> {
     }));
     TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Tunn").with_icon(icon).build().map_err(|e| e.to_string())
 }
+
+pub fn start() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if gtk::init().is_err() {
+                let _ = tx.send(false);
+                return;
+            }
+            match build() {
+                Ok(icon) => {
+                    let _ = tx.send(true);
+                    let _keep = icon;
+                    gtk::main();
+                }
+                Err(_) => {
+                    let _ = tx.send(false);
+                }
+            }
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(3)).unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        match build() {
+            Ok(icon) => {
+                std::mem::forget(icon);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+}

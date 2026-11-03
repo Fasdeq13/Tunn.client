@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-pub const VERSION: &str = "3.6";
+pub const VERSION: &str = "3.7";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiCmd {
@@ -27,6 +27,7 @@ struct Conn {
     tun: bool,
     sb: bool,
     tun_proc: Option<xray::Proc>,
+    wg: bool,
 }
 
 struct Update {
@@ -457,17 +458,21 @@ impl Host {
                 match g.conn.as_mut() {
                     Some(c) => {
                         let alive = c.proc.alive() && c.tun_proc.as_mut().map(|t| t.alive()).unwrap_or(true);
-                        Some((alive, c.bin.clone(), if c.sb { 0 } else { c.api }))
+                        Some((alive, c.bin.clone(), if c.sb || c.wg { 0 } else { c.api }, c.wg))
                     }
                     None => None,
                 }
             };
-            if let Some((alive, bin, api)) = alive_stats {
+            if let Some((alive, bin, api, wg)) = alive_stats {
                 if !alive {
                     self.lost();
                     return;
                 }
-                let stats = if api == 0 { None } else { xray::query_stats(&bin, api) };
+                #[cfg(target_os = "linux")]
+                let wg_stats = if wg { crate::wg_linux::counters() } else { None };
+                #[cfg(not(target_os = "linux"))]
+                let wg_stats: Option<(u64, u64)> = { let _ = wg; None };
+                let stats = if wg { wg_stats } else if api == 0 { None } else { xray::query_stats(&bin, api) };
                 {
                     let mut g = self.inner.lock().unwrap();
                     if let Some((d, u)) = stats {
@@ -672,6 +677,12 @@ impl Host {
     }
 
     fn start_conn(&self, server: &Server) -> Result<Conn, String> {
+        #[cfg(target_os = "linux")]
+        if crate::wg_linux::is_conf(&server.conf) && !self.web_flag("wgXray", false) {
+            let r = crate::wg_linux::start(&server.conf, &|m| self.set_core_busy(Some(m.into())));
+            self.set_core_busy(None);
+            return r.map(|proc| Conn { proc, api: 0, bin: PathBuf::new(), tun: true, sb: false, tun_proc: None, wg: true });
+        }
         let mut parsed = links::parse(&server.conf)?;
         links::resolve(&mut parsed.outbound);
         let use_sb = self.engine_for(&parsed.outbound)?;
@@ -695,7 +706,7 @@ impl Host {
                     let tail = singbox::log_tail(4);
                     return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
                 }
-                return Ok(Conn { proc, api: 0, bin, tun: true, sb: true, tun_proc: None });
+                return Ok(Conn { proc, api: 0, bin, tun: true, sb: true, tun_proc: None, wg: false });
             }
             let cfg = singbox::build_config(&parsed.outbound, port, false)?;
             let mut proc = singbox::start(&bin, &cfg, port)?;
@@ -705,7 +716,7 @@ impl Host {
                 return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
             }
             xray::set_system_proxy(port, port);
-            return Ok(Conn { proc, api: 0, bin, tun: false, sb: true, tun_proc: None });
+            return Ok(Conn { proc, api: 0, bin, tun: false, sb: true, tun_proc: None, wg: false });
         }
         let bin = self.ensure_core()?;
         let dns = self.inner.lock().unwrap().store.settings.dns_list();
@@ -728,7 +739,7 @@ impl Host {
                             let tail = singbox::log_tail(6);
                             return Err(format!("Сервер не отвечает: {}{}", e, if tail.is_empty() { String::new() } else { format!("\n{}", tail) }));
                         }
-                        return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: Some(tp) });
+                        return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: Some(tp), wg: false });
                     }
                     Err(e) => {
                         proc.stop();
@@ -737,11 +748,11 @@ impl Host {
                 }
             }
             let proc = xray::start_tun(&bin, cfg, socks)?;
-            return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: None });
+            return Ok(Conn { proc, api, bin, tun: true, sb: false, tun_proc: None, wg: false });
         }
         let proc = xray::start(&bin, &cfg, socks)?;
         xray::set_system_proxy(http, socks);
-        Ok(Conn { proc, api, bin, tun: false, sb: false, tun_proc: None })
+        Ok(Conn { proc, api, bin, tun: false, sb: false, tun_proc: None, wg: false })
     }
 
     pub fn disconnect(self: &Arc<Self>) {

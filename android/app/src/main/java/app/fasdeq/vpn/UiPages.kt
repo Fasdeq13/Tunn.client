@@ -293,12 +293,12 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.6 · создатель fasdeq13")
+            BaseRow("Tunn", "Версия 3.7 · создатель fasdeq13")
         }
         Section("Участники") {
             BaseRow("Fasdeq13", "Создатель", { a.call("open", "https://github.com/Fasdeq13/FasdeqVPN") })
             BaseRow("montik")
-            BaseRow("fezix64")
+            BaseRow("utowike")
         }
         Section("Официальный канал") {
             BaseRow("Tunn в Telegram", "t.me/Tunn_client", { a.call("open", "https://t.me/Tunn_client") }, leading = {

@@ -12,8 +12,8 @@ let
       jdk21
       rustup
       python3
-      # desktop (wry/tao, tray, xdotool)
-      webkitgtk_4_1 gtk3 glib cairo pango gdk-pixbuf atk libsoup_3 libayatana-appindicator xdotool
+      # desktop (Slint + winit, tray, xdotool)
+      gtk3 glib cairo pango gdk-pixbuf atk libayatana-appindicator xdotool
       xorg.libX11 xorg.libXcursor xorg.libXrandr xorg.libXi libxkbcommon wayland libGL
       # Windows cross build
       pkgsCross.mingwW64.stdenv.cc

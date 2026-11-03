@@ -1,0 +1,564 @@
+import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
+import { Pal, Row, Icon, Label, Chip, RoundBtn, SwitchRow, ChoiceRow, CategoryRow } from "base.slint";
+export { Pal, Row }
+
+export global Ui {
+    in property <string> status: "Off";
+    in property <string> status-text: "Отключено";
+    in property <string> detail-text;
+    in property <string> server-name;
+    in property <string> error-text;
+    in property <string> toast;
+    in property <[Row]> rows;
+    in property <string> btn-path;
+    in property <string> halo-path;
+    in property <float> burst;
+    in property <bool> ping-busy;
+    in property <bool> check-busy;
+    in property <string> hwid: "";
+    in property <string> version: "3.7";
+    in property <int> theme;
+    in property <bool> dynamic;
+    in property <bool> amoled;
+    in property <bool> auto-connect;
+    in property <int> dns;
+    in property <int> ping-mode;
+    in property <bool> auto-ping;
+    in property <bool> sort-ping;
+    in property <bool> auto-check;
+    in property <bool> close-to-tray;
+    in property <bool> autostart;
+    in property <bool> tun-ok;
+    in property <int> tun-mode;
+    in property <bool> xray-fallback;
+    in property <string> accent: "#4FD8C8";
+    in property <[color]> swatches;
+    in property <[string]> swatch-hex;
+    in-out property <bool> wide: false;
+    in-out property <string> page: "home";
+    in-out property <string> sheet: "";
+    in-out property <string> sheet-id: "";
+    in-out property <string> sheet-name: "";
+    callback toggle();
+    callback select(string);
+    callback remove(string);
+    callback toggle-group(string);
+    callback group-menu(string);
+    callback ping();
+    callback services();
+    callback submit-add(string);
+    callback paste() -> string;
+    callback rename(string, string);
+    callback ping-one(string);
+    callback set-bool(string, bool);
+    callback set-int(string, int);
+    callback set-str(string, string);
+    callback hwid-reset();
+    callback open-link(string);
+    callback quit();
+}
+
+component PowerButton inherits Rectangle {
+    in property <length> size: 196px;
+    callback clicked;
+    property <bool> on: Ui.status == "On";
+    property <bool> down: ta.pressed;
+    width: size + 44px;
+    height: size + 44px;
+    Path {
+        x: 0px; y: 0px;
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: 1000;
+        viewbox-height: 1000;
+        commands: Ui.halo-path;
+        fill: Ui.status == "On" ? Pal.primary.with-alpha(0.12) : transparent;
+    }
+    body := Rectangle {
+        width: (root.size) * (root.down ? 0.92 : 1.0);
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        animate width { duration: 160ms; easing: ease-out; }
+        Path {
+            width: parent.width;
+            height: parent.height;
+            viewbox-width: 1000;
+            viewbox-height: 1000;
+            commands: Ui.btn-path;
+            fill: root.on ? Pal.primary : Pal.secondary-container;
+            animate fill { duration: 600ms; }
+        }
+        Path {
+            width: parent.width * 0.42;
+            height: self.width;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 12 3.5 L 12 11.5 M 7.2 6.2 A 8 8 0 1 0 16.8 6.2";
+            stroke: root.on ? Pal.on-primary : Pal.on-secondary-container;
+            stroke-width: 2.4px;
+            stroke-line-cap: round;
+            fill: transparent;
+            animate stroke { duration: 600ms; }
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component ServerRow inherits Rectangle {
+    in property <Row> r;
+    callback pick();
+    callback menu();
+    callback drop();
+    height: 74px;
+    Rectangle {
+        y: 3px;
+        height: parent.height - 6px;
+        border-radius: 24px;
+        background: r.picked ? Pal.primary-container : Pal.container-high;
+        animate background { duration: 300ms; }
+        TouchArea {
+            clicked => { root.pick(); }
+        }
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 4px;
+            spacing: 12px;
+            opacity: r.blocked ? 0.5 : 1;
+            Rectangle {
+                width: 44px;
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 22px;
+                    background: r.picked ? Pal.primary : Pal.secondary-container;
+                    Label {
+                        text: r.picked ? "✓" : r.letter;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        color: r.picked ? Pal.on-primary : Pal.on-secondary-container;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Label { text: r.title; font-size: 16px; font-weight: 500; }
+                Label { text: r.sub; font-size: 12px; color: r.blocked ? Pal.error : Pal.on-variant; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                width: 62px;
+                Label { text: r.ping; font-size: 13px; font-weight: 500; color: r.ping-color; horizontal-alignment: right; }
+                if r.has-checks: HorizontalLayout {
+                    alignment: end;
+                    spacing: 5px;
+                    Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: r.c0; }
+                    Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: r.c1; }
+                    Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: r.c2; }
+                }
+            }
+            Rectangle {
+                width: 40px;
+                TouchArea { clicked => { root.menu(); } }
+                Icon { source: @image-url("icons/more.svg"); width: 20px; height: 20px; tint: Pal.on-variant; }
+            }
+        }
+    }
+}
+
+component GroupHead inherits Rectangle {
+    in property <Row> r;
+    callback toggle();
+    callback menu();
+    height: 46px;
+    TouchArea { clicked => { root.toggle(); } }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        Rectangle {
+            width: 24px;
+            Icon {
+                source: @image-url("icons/arrow_down.svg");
+                width: 24px; height: 24px;
+                tint: Pal.primary;
+                transform-rotation: r.folded ? -90deg : 0deg;
+                animate transform-rotation { duration: 260ms; easing: ease-in-out; }
+            }
+        }
+        Label { text: r.title; color: Pal.primary; font-size: 14px; font-weight: 500; vertical-alignment: center; }
+        Rectangle {
+            width: 36px;
+            TouchArea { clicked => { root.menu(); } }
+            Icon { source: @image-url("icons/more.svg"); width: 20px; height: 20px; tint: Pal.on-variant; }
+        }
+    }
+}
+
+component Hero inherits Rectangle {
+    in property <bool> compact;
+    VerticalLayout {
+        HorizontalLayout {
+            padding: 20px;
+            padding-top: 18px;
+            padding-bottom: 6px;
+            Label { text: "Tunn"; font-size: 28px; font-weight: 700; vertical-alignment: center; }
+            Rectangle {}
+            RoundBtn { width: 48px; height: 48px; d: 48px; icon: @image-url("icons/settings.svg"); clicked => { Ui.page = Ui.wide ? "look" : "settings"; } }
+        }
+        Rectangle {
+            height: root.compact ? 120px : 270px;
+            animate height { duration: 400ms; easing: ease-in-out; }
+            PowerButton {
+                size: root.compact ? 84px : 196px;
+                clicked => { Ui.toggle(); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Label { text: Ui.status-text; font-size: 20px; font-weight: 500; horizontal-alignment: center; }
+            Label { text: Ui.error-text != "" ? Ui.error-text : Ui.detail-text; color: Ui.error-text != "" ? Pal.error : Pal.on-variant; font-size: 13px; horizontal-alignment: center; }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component ServersPanel inherits Rectangle {
+    in property <length> bottom-r: 0px;
+    background: Pal.container;
+    border-top-left-radius: 34px;
+    border-top-right-radius: 34px;
+    border-bottom-left-radius: root.bottom-r;
+    border-bottom-right-radius: root.bottom-r;
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 16px;
+            padding-top: 16px;
+            padding-bottom: 8px;
+            spacing: 6px;
+            Label { text: "Серверы"; font-size: 22px; font-weight: 700; vertical-alignment: center; }
+            Rectangle { min-width: 14px; }
+            RoundBtn { width: 42px; height: 42px; icon: @image-url("icons/shield.svg"); busy: Ui.check-busy; clicked => { Ui.services(); } }
+            RoundBtn { width: 42px; height: 42px; icon: @image-url("icons/bolt.svg"); busy: Ui.ping-busy; clicked => { Ui.ping(); } }
+            Rectangle {
+                width: 124px;
+                height: 42px;
+                border-radius: 21px;
+                background: Pal.primary;
+                TouchArea { clicked => { Ui.sheet = "add"; } }
+                Icon { x: 14px; y: (parent.height - self.height) / 2; width: 18px; height: 18px; source: @image-url("icons/add.svg"); tint: Pal.on-primary; }
+                Label { x: 38px; width: parent.width - 42px; height: parent.height; overflow: clip; text: "Добавить"; color: Pal.on-primary; font-size: 14px; font-weight: 500; vertical-alignment: center; }
+            }
+        }
+        if Ui.rows.length == 0: VerticalLayout {
+            alignment: center;
+            padding: 32px;
+            spacing: 6px;
+            Label { text: "Серверов пока нет"; font-size: 18px; horizontal-alignment: center; }
+            Label { text: "Добавьте ссылку vless://, trojan://, ss://, wireguard:// или адрес подписки"; font-size: 13px; color: Pal.on-variant; wrap: word-wrap; overflow: clip; horizontal-alignment: center; }
+        }
+        if Ui.rows.length > 0: ListView {
+            for r[i] in Ui.rows: Rectangle {
+                height: r.kind == 0 ? 46px : 74px;
+                if r.kind == 0: GroupHead {
+                    r: r;
+                    toggle => { Ui.toggle-group(r.id); }
+                    menu => { Ui.group-menu(r.id); }
+                }
+                if r.kind == 1: Rectangle {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    ServerRow {
+                        r: r;
+                        pick => { Ui.select(r.id); }
+                        menu => { Ui.sheet-id = r.id; Ui.sheet-name = r.title; Ui.sheet = "server"; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Home inherits Rectangle {
+    background: Pal.bg;
+    if !Ui.wide: VerticalLayout {
+        Hero { vertical-stretch: 0; compact: root.height < 640px; height: root.height < 640px ? 240px : 400px; }
+        ServersPanel { vertical-stretch: 1; }
+    }
+    if Ui.wide: HorizontalLayout {
+        Hero { width: min(root.width * 0.42, 440px); compact: root.height < 520px; }
+        Rectangle {
+            ServersPanel { x: 0px; y: 16px; width: parent.width - 16px; height: parent.height - 32px; bottom-r: 34px; }
+        }
+    }
+}
+
+component SubPage inherits Rectangle {
+    in property <string> title;
+    background: Pal.bg;
+    VerticalLayout {
+        HorizontalLayout {
+            padding: 8px;
+            padding-left: Ui.wide && root.title != "Настройки" ? 24px : 8px;
+            padding-right: 16px;
+            spacing: 4px;
+            if !Ui.wide || root.title == "Настройки": Rectangle {
+                width: 48px; height: 48px;
+                TouchArea { clicked => { Ui.page = (root.title == "Настройки") ? "home" : "settings"; } }
+                Icon { source: @image-url("icons/back.svg"); width: 24px; height: 24px; }
+            }
+            Label { text: root.title; font-size: 22px; font-weight: 700; vertical-alignment: center; }
+        }
+        ScrollView {
+            VerticalLayout {
+                alignment: start;
+                padding-bottom: 24px;
+                @children
+            }
+        }
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    alignment: start;
+    padding-top: 18px;
+    Label { text: root.title; color: Pal.primary; font-size: 14px; font-weight: 500; x: 16px; }
+    spacing: 4px;
+    @children
+}
+
+component Settings inherits Rectangle {
+    background: Pal.bg;
+    SubPage {
+        title: "Настройки";
+        Rectangle { height: 8px; }
+        CategoryRow { icon: @image-url("icons/palette.svg"); title: "Оформление"; sub: "Тема, цвет акцента"; clicked => { Ui.page = "look"; } }
+        CategoryRow { icon: @image-url("icons/dns.svg"); title: "Подключение"; sub: "DNS, режим TUN, автозапуск"; clicked => { Ui.page = "connect"; } }
+        CategoryRow { icon: @image-url("icons/bolt.svg"); title: "Пинг и сервисы"; sub: "Способ проверки, автопроверка"; clicked => { Ui.page = "ping"; } }
+        CategoryRow { icon: @image-url("icons/person.svg"); title: "Подписки"; sub: "HWID"; clicked => { Ui.page = "subs"; } }
+        CategoryRow { icon: @image-url("icons/info.svg"); title: "О приложении"; sub: "Tunn " + Ui.version + ", создатель fasdeq13"; clicked => { Ui.page = "about"; } }
+    }
+}
+
+component LookPage inherits SubPage {
+    title: "Оформление";
+    Section {
+        title: "Тема";
+        ChoiceRow { options: ["Система", "Светлая", "Тёмная"]; selected: Ui.theme; picked(i) => { Ui.set-int("theme", i); } }
+        ChoiceRow { title: "Цвета"; options: ["Системные", "Свои"]; selected: Ui.dynamic ? 0 : 1; picked(i) => { Ui.set-bool("dynamic", i == 0); } }
+        SwitchRow { title: "Чёрный фон"; sub: "Для OLED-экранов в тёмной теме"; checked: Ui.amoled; toggled(v) => { Ui.set-bool("amoled", v); } }
+    }
+    Section {
+        title: "Цвет акцента";
+        Rectangle {
+            height: 60px;
+            opacity: Ui.dynamic ? 0.4 : 1;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 10px;
+                alignment: start;
+                for c[i] in Ui.swatches: Rectangle {
+                    width: 40px; height: 40px;
+                    y: 10px;
+                    border-radius: 20px;
+                    background: c;
+                    border-width: Ui.swatch-hex[i].to-lowercase() == Ui.accent.to-lowercase() ? 3px : 0px;
+                    border-color: Pal.on-surface;
+                    TouchArea { clicked => { Ui.set-str("accentHex", Ui.swatch-hex[i]); Ui.set-bool("dynamic", false); } }
+                }
+            }
+        }
+    }
+}
+
+component ConnectPage inherits SubPage {
+    title: "Подключение";
+    Section {
+        title: "Основное";
+        SwitchRow { title: "Подключаться при запуске"; checked: Ui.auto-connect; toggled(v) => { Ui.set-bool("autoConnect", v); } }
+        ChoiceRow { title: "DNS"; options: ["Авто", "Cloudflare", "Google", "Quad9"]; selected: Ui.dns > 3 ? 0 : Ui.dns; picked(i) => { Ui.set-int("dns", i); } }
+        ChoiceRow { title: "Режим"; options: ["Авто", "Прокси", "TUN"]; selected: Ui.tun-mode; active: Ui.tun-ok; picked(i) => { Ui.set-int("tunMode", i); } }
+        SwitchRow { title: "Xray для неподдерживаемых"; sub: "Если sing-box не умеет протокол"; checked: Ui.xray-fallback; toggled(v) => { Ui.set-bool("xrayFallback", v); } }
+    }
+    Section {
+        title: "Окно";
+        SwitchRow { title: "Сворачивать в трей"; checked: Ui.close-to-tray; toggled(v) => { Ui.set-bool("closeToTray", v); } }
+        SwitchRow { title: "Запускать вместе с системой"; checked: Ui.autostart; toggled(v) => { Ui.set-bool("autostart", v); } }
+    }
+}
+
+component PingPage inherits SubPage {
+    title: "Пинг и сервисы";
+    Section {
+        title: "Пинг";
+        ChoiceRow { options: ["Авто", "TCP", "Через ядро"]; selected: Ui.ping-mode > 2 ? 0 : Ui.ping-mode; picked(i) => { Ui.set-int("pingMode", i); } }
+        SwitchRow { title: "Пинг при запуске"; checked: Ui.auto-ping; toggled(v) => { Ui.set-bool("autoPing", v); } }
+        SwitchRow { title: "Сортировать по пингу"; checked: Ui.sort-ping; toggled(v) => { Ui.set-bool("sortPing", v); } }
+    }
+    Section {
+        title: "Сервисы";
+        SwitchRow { title: "Автопроверка сервисов"; sub: "Пока включено подключение"; checked: Ui.auto-check; toggled(v) => { Ui.set-bool("autoCheck", v); } }
+    }
+}
+
+component SubsPage inherits SubPage {
+    title: "Подписки";
+    Section {
+        title: "HWID";
+        Rectangle {
+            height: 64px;
+            Rectangle {
+                x: 16px; width: parent.width - 32px; height: 52px;
+                border-radius: 16px;
+                background: Pal.container-highest;
+                Label { x: 16px; width: parent.width - 32px; text: Ui.hwid; vertical-alignment: center; }
+            }
+        }
+        Rectangle {
+            height: 52px;
+            Rectangle {
+                x: 16px; width: 168px; height: 40px;
+                border-radius: 20px;
+                background: Pal.secondary-container;
+                TouchArea { clicked => { Ui.hwid-reset(); } }
+                Label { text: "Сбросить HWID"; color: Pal.on-secondary-container; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; font-weight: 500; }
+            }
+        }
+    }
+}
+
+component AboutPage inherits SubPage {
+    title: "О приложении";
+    Section {
+        title: "Tunn";
+        Rectangle {
+            height: 60px;
+            Label { x: 16px; text: "Версия " + Ui.version + " · создатель fasdeq13"; vertical-alignment: center; }
+        }
+    }
+}
+
+component Sheet inherits Rectangle {
+    in property <length> body-height: 300px;
+    callback closed;
+    background: #00000099;
+    TouchArea { clicked => { root.closed(); } }
+    Rectangle {
+        y: parent.height - self.height;
+        height: root.body-height;
+        border-top-left-radius: 34px;
+        border-top-right-radius: 34px;
+        background: Pal.container-high;
+        TouchArea {}
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            alignment: start;
+            @children
+        }
+    }
+}
+
+component ActionRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger;
+    callback clicked;
+    height: 52px;
+    TouchArea { clicked => { root.clicked(); } }
+    Label { x: 4px; width: parent.width - 8px; text: root.text; color: root.danger ? Pal.error : Pal.on-surface; horizontal-alignment: left; vertical-alignment: center; }
+}
+
+export component App inherits Window {
+    title: "Tunn";
+    default-font-family: "Roboto";
+    background: Pal.bg;
+    min-width: 360px;
+    min-height: 480px;
+    preferred-width: 460px;
+    preferred-height: 800px;
+
+    changed width => { Ui.wide = self.width > 760px; }
+    init => { Ui.wide = self.width > 760px; }
+
+    Rectangle {
+        width: min(parent.width, Ui.wide ? 1240px : 560px);
+        x: (parent.width - self.width) / 2;
+        clip: true;
+        Home { x: Ui.page == "home" ? 0px : -parent.width / 6; opacity: Ui.page == "home" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+        if Ui.wide: Rectangle {
+            width: 340px;
+            x: Ui.page == "home" ? -340px : 0px;
+            animate x { duration: 300ms; easing: ease-in-out; }
+            Settings {}
+        }
+        Rectangle {
+            x: Ui.wide ? 340px : 0px;
+            width: parent.width - self.x;
+            if !Ui.wide: Settings { x: Ui.page == "settings" ? 0px : (Ui.page == "home" ? parent.width : -parent.width / 6); opacity: Ui.page == "settings" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            LookPage { x: Ui.page == "look" ? 0px : parent.width; opacity: Ui.page == "look" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            ConnectPage { x: Ui.page == "connect" ? 0px : parent.width; opacity: Ui.page == "connect" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            PingPage { x: Ui.page == "ping" ? 0px : parent.width; opacity: Ui.page == "ping" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            SubsPage { x: Ui.page == "subs" ? 0px : parent.width; opacity: Ui.page == "subs" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            AboutPage { x: Ui.page == "about" ? 0px : parent.width; opacity: Ui.page == "about" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+        }
+
+        if Ui.sheet == "add": Sheet {
+            body-height: 330px;
+            closed => { Ui.sheet = ""; }
+            Label { text: "Добавить"; font-size: 22px; font-weight: 700; }
+            Label { text: "Ссылка, адрес подписки или конфиг WireGuard"; font-size: 13px; color: Pal.on-variant; }
+            addin := TextEdit { height: 120px; font-size: 14px; wrap: word-wrap; }
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: end;
+                Chip { text: "Вставить"; width: 110px; clicked => { addin.text = Ui.paste(); } }
+                Rectangle {
+                    width: 120px; height: 40px;
+                    border-radius: 20px;
+                    background: Pal.primary;
+                    TouchArea { clicked => { Ui.submit-add(addin.text); Ui.sheet = ""; } }
+                    Label { text: "Добавить"; color: Pal.on-primary; horizontal-alignment: center; vertical-alignment: center; font-weight: 500; font-size: 14px; }
+                }
+            }
+        }
+        if Ui.sheet == "server": Sheet {
+            body-height: 330px;
+            closed => { Ui.sheet = ""; }
+            Label { text: Ui.sheet-name; font-size: 22px; font-weight: 700; }
+            Rectangle {
+                height: 48px;
+                border-radius: 16px;
+                background: Pal.container-highest;
+                renin := TextInput {
+                    x: 14px; width: parent.width - 28px; height: parent.height;
+                    text: Ui.sheet-name;
+                    color: Pal.on-surface;
+                    font-size: 15px;
+                    single-line: true;
+                    vertical-alignment: center;
+                }
+            }
+            ActionRow { text: "Сохранить название"; clicked => { Ui.rename(Ui.sheet-id, renin.text); Ui.sheet = ""; } }
+            ActionRow { text: "Проверить пинг"; clicked => { Ui.ping-one(Ui.sheet-id); Ui.sheet = ""; } }
+            ActionRow { text: "Удалить"; danger: true; clicked => { Ui.remove(Ui.sheet-id); Ui.sheet = ""; } }
+        }
+        if Ui.toast != "": Rectangle {
+            y: parent.height - 84px;
+            x: (parent.width - self.width) / 2;
+            width: min(parent.width - 40px, 420px);
+            height: 48px;
+            border-radius: 16px;
+            background: Pal.on-surface;
+            Label { x: 16px; width: parent.width - 32px; text: Ui.toast; color: Pal.bg; vertical-alignment: center; font-size: 14px; }
+        }
+    }
+}

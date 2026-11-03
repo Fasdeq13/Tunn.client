@@ -309,7 +309,7 @@ pub fn find_binary() -> Option<PathBuf> {
     std::env::split_paths(&path).map(|p| p.join(exe())).find(|p| p.is_file())
 }
 
-fn http(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+pub fn http(url: &str, limit: u64) -> Result<Vec<u8>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(300)))
         .timeout_connect(Some(Duration::from_secs(15)))

@@ -4,37 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server};
 
-struct Asset {
-    path: &'static str,
-    mime: &'static str,
-    data: &'static [u8],
-}
-
-const ASSETS: &[Asset] = &[
-    Asset { path: "index.html", mime: "text/html; charset=utf-8", data: include_bytes!("../../web/index.html") },
-    Asset { path: "app.js", mime: "text/javascript; charset=utf-8", data: include_bytes!("../../web/app.js") },
-    Asset { path: "bridge.js", mime: "text/javascript; charset=utf-8", data: include_bytes!("../../web/bridge.js") },
-    Asset { path: "style.css", mime: "text/css; charset=utf-8", data: include_bytes!("../../web/style.css") },
-    Asset { path: "fonts/Roboto-Regular.ttf", mime: "font/ttf", data: include_bytes!("../../web/fonts/Roboto-Regular.ttf") },
-    Asset { path: "fonts/Roboto-Medium.ttf", mime: "font/ttf", data: include_bytes!("../../web/fonts/Roboto-Medium.ttf") },
-    Asset { path: "fonts/Roboto-Bold.ttf", mime: "font/ttf", data: include_bytes!("../../web/fonts/Roboto-Bold.ttf") },
-];
-
 fn header(name: &str, value: &str) -> Header {
     Header::from_bytes(name.as_bytes(), value.as_bytes()).unwrap()
-}
-
-fn asset(path: &str) -> Option<(Vec<u8>, &'static str)> {
-    let path = if path.is_empty() { "index.html" } else { path };
-    if let Ok(dir) = std::env::var("FASDEQ_WEB") {
-        if !path.contains("..") {
-            if let Ok(data) = std::fs::read(std::path::Path::new(&dir).join(path)) {
-                let mime = ASSETS.iter().find(|a| a.path == path).map(|a| a.mime).unwrap_or("application/octet-stream");
-                return Some((data, mime));
-            }
-        }
-    }
-    ASSETS.iter().find(|a| a.path == path).map(|a| (a.data.to_vec(), a.mime))
 }
 
 fn query(url: &str, key: &str) -> Option<String> {
@@ -134,22 +105,6 @@ fn handle(host: Arc<Host>, port: u16, mut rq: Request) {
             let payload = v.get("payload").cloned().unwrap_or(Value::Null);
             let r = host.act(&name, &payload);
             let _ = rq.respond(json_response(r.to_string()));
-        }
-        (Method::Get, p) => {
-            let rel = p.trim_start_matches('/');
-            match asset(rel) {
-                Some((mut data, mime)) => {
-                    if rel.is_empty() || rel == "index.html" {
-                        let s = String::from_utf8_lossy(&data).replace("<script src=\"bridge.js\"></script>", "<script>window.__FQHTTP=1;</script>\n<script src=\"bridge.js\"></script>");
-                        data = s.into_bytes();
-                    }
-                    let cache = if mime.starts_with("font") { "max-age=86400" } else { "no-store" };
-                    let _ = rq.respond(Response::from_data(data).with_header(header("Content-Type", mime)).with_header(header("Cache-Control", cache)));
-                }
-                None => {
-                    let _ = rq.respond(Response::from_string("not found").with_status_code(404));
-                }
-            }
         }
         _ => {
             let _ = rq.respond(Response::from_string("no").with_status_code(405));

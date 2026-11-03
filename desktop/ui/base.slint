@@ -1,0 +1,195 @@
+import "fonts/Roboto-Regular.ttf";
+import "fonts/Roboto-Medium.ttf";
+import "fonts/Roboto-Bold.ttf";
+
+export global Pal {
+    in property <color> bg: #0f1413;
+    in property <color> container: #181d1c;
+    in property <color> container-high: #202625;
+    in property <color> container-highest: #2a3130;
+    in property <color> primary: #4fd8c8;
+    in property <color> on-primary: #00201c;
+    in property <color> primary-container: #1c4a45;
+    in property <color> on-primary-container: #b9f3ea;
+    in property <color> secondary-container: #2c3f3c;
+    in property <color> on-secondary-container: #d3e6e2;
+    in property <color> on-surface: #e0e4e2;
+    in property <color> on-variant: #a9b4b1;
+    in property <color> outline: #6b7573;
+    in property <color> error: #ffb4ab;
+}
+
+export struct Row {
+    kind: int,
+    id: string,
+    title: string,
+    sub: string,
+    ping: string,
+    ping-color: color,
+    c0: color,
+    c1: color,
+    c2: color,
+    has-checks: bool,
+    picked: bool,
+    folded: bool,
+    blocked: bool,
+    letter: string,
+}
+
+export component Icon inherits Image {
+    in property <color> tint: Pal.on-surface;
+    colorize: tint;
+    image-fit: contain;
+}
+
+export component Label inherits Text {
+    color: Pal.on-surface;
+    font-family: self.font-weight >= 700 ? "Roboto Bold" : (self.font-weight >= 500 ? "Roboto Medium" : "Roboto");
+    font-size: 16px;
+    overflow: elide;
+    wrap: no-wrap;
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+    height: 40px;
+    border-radius: 20px;
+    background: selected ? Pal.secondary-container : transparent;
+    border-width: selected ? 0px : 1px;
+    border-color: Pal.outline;
+    animate background { duration: 200ms; }
+    ta := TouchArea { clicked => { root.clicked(); } }
+    Label {
+        text: root.text;
+        color: root.selected ? Pal.on-secondary-container : Pal.on-surface;
+        font-size: 14px;
+        font-weight: 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        x: 12px;
+        width: parent.width - 24px;
+    }
+}
+
+export component RoundBtn inherits Rectangle {
+    in property <image> icon;
+    in property <bool> busy;
+    in property <bool> filled;
+    in property <length> d: 42px;
+    callback clicked;
+    width: root.d;
+    height: root.d;
+    border-radius: self.width / 2;
+    background: filled ? Pal.primary : Pal.secondary-container;
+    opacity: busy ? 0.6 : 1;
+    TouchArea { enabled: !root.busy; clicked => { root.clicked(); } }
+    Icon {
+        source: root.icon;
+        width: 22px;
+        height: 22px;
+        tint: root.filled ? Pal.on-primary : Pal.on-secondary-container;
+        opacity: root.busy ? 0.4 : 1;
+    }
+}
+
+export component SwitchRow inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> checked;
+    in property <bool> active: true;
+    callback toggled(bool);
+    height: sub == "" ? 56px : 72px;
+    opacity: active ? 1 : 0.4;
+    TouchArea { enabled: root.active; clicked => { root.toggled(!root.checked); } }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Label { text: root.title; }
+            if root.sub != "": Label { text: root.sub; font-size: 13px; color: Pal.on-variant; }
+        }
+        Rectangle {
+            width: 52px;
+            Rectangle {
+                width: 52px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.checked ? Pal.primary : Pal.container-highest;
+                border-width: root.checked ? 0px : 2px;
+                border-color: Pal.outline;
+                animate background { duration: 200ms; }
+                Rectangle {
+                    width: root.checked ? 24px : 16px;
+                    height: root.checked ? 24px : 16px;
+                    border-radius: self.width / 2;
+                    y: (parent.height - self.height) / 2;
+                    x: root.checked ? 24px : 8px;
+                    background: root.checked ? Pal.on-primary : Pal.outline;
+                    animate x, width, height { duration: 200ms; easing: ease-out; }
+                }
+            }
+        }
+    }
+}
+
+export component ChoiceRow inherits Rectangle {
+    in property <string> title;
+    in property <[string]> options;
+    in property <int> selected;
+    in property <bool> active: true;
+    callback picked(int);
+    height: 50px + (title == "" ? 0px : 28px);
+    opacity: active ? 1 : 0.4;
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 8px;
+        alignment: center;
+        if root.title != "": Label { text: root.title; }
+        HorizontalLayout {
+            spacing: 8px;
+            for o[i] in root.options: Chip {
+                text: o;
+                selected: i == root.selected;
+                clicked => { if root.active { root.picked(i); } }
+            }
+        }
+    }
+}
+
+export component CategoryRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> sub;
+    callback clicked;
+    height: 82px;
+    TouchArea { clicked => { root.clicked(); } }
+    Rectangle {
+        x: 16px;
+        width: parent.width - 32px;
+        height: 74px;
+        border-radius: 24px;
+        background: Pal.container;
+        HorizontalLayout {
+            padding: 14px;
+            spacing: 16px;
+            Rectangle {
+                width: 46px;
+                height: 46px;
+                border-radius: 23px;
+                background: Pal.primary-container;
+                Icon { source: root.icon; width: 24px; height: 24px; tint: Pal.on-primary-container; }
+            }
+            VerticalLayout {
+                alignment: center;
+                Label { text: root.title; font-size: 17px; font-weight: 500; }
+                Label { text: root.sub; font-size: 13px; color: Pal.on-variant; }
+            }
+        }
+    }
+}

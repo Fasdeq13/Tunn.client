@@ -1,6 +1,6 @@
 [package]
 name = "tunn"
-version = "3.6.0"
+version = "3.7.0"
 edition = "2021"
 description = "Tunn"
 
@@ -20,14 +20,15 @@ flate2 = "1"
 tar = "0.4"
 tiny_http = "0.12"
 directories = "6"
-tao = "0.34"
-wry = "0.53"
+slint = { version = "1", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2"] }
 tray-icon = "0.21"
 rfd = "0.15"
 auto-launch = "0.5"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
 [build-dependencies]
+slint-build = "1"
+cc = "1"
 winresource = "0.1"
 
 [profile.release]
@@ -35,3 +36,7 @@ opt-level = 3
 lto = "thin"
 codegen-units = 4
 strip = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+sha2 = "0.10"

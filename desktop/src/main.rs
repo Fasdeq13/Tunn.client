@@ -5,17 +5,18 @@ mod host;
 mod server;
 mod singbox;
 mod store;
+mod palette;
 mod tray;
+mod ui;
+#[cfg(target_os = "linux")]
+mod wg_linux;
 mod xray;
 
 pub use fasdeq_core::{importer, links, model, ping};
 
-use host::{Host, UiCmd};
+use host::Host;
 use std::io::{Read, Write};
 use std::time::Duration;
-use tao::event::{Event, StartCause, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoopBuilder};
-use tao::window::{Icon, WindowBuilder};
 
 #[cfg(target_os = "linux")]
 fn install_desktop_entry() {
@@ -78,37 +79,25 @@ fn lock_instance() -> Option<std::fs::File> {
     }
 }
 
-fn open_in_browser(url: &str) {
-    #[cfg(target_os = "windows")]
-    {
-        let mut done = false;
-        for exe in ["msedge", "chrome"] {
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/C", "start", "", exe, &format!("--app={}", url)]);
-            fasdeq_core::proc::hide_window(&mut c);
-            if c.status().map(|s| s.success()).unwrap_or(false) {
-                done = true;
-                break;
-            }
-        }
-        if done {
-            return;
-        }
-    }
-    host::open_url(url);
-}
-
-fn window_icon() -> Option<Icon> {
-    let (rgba, w, h) = tray::raster(128);
-    Icon::from_rgba(rgba, w, h).ok()
-}
-
 fn main() {
     if let Some(i) = std::env::args().position(|a| a == "--icon-png") {
         if let Some(path) = std::env::args().nth(i + 1) {
             let _ = std::fs::write(path, tray::png(256));
             return;
         }
+    }
+    if let Some(i) = std::env::args().position(|a| a == "--screenshot") {
+        let a: Vec<String> = std::env::args().collect();
+        let get = |n: usize, d: &str| a.get(i + n).cloned().unwrap_or_else(|| d.to_string());
+        let host = Host::new();
+        for link in std::env::var("TUNN_DEMO").unwrap_or_default().split_whitespace() {
+            host.act("add", &serde_json::json!(link));
+        }
+        let r = ui::screenshot(host, &get(1, "shot.png"), &get(2, "home"), &get(3, ""), get(4, "460").parse().unwrap_or(460), get(5, "800").parse().unwrap_or(800));
+        if let Err(e) = r {
+            eprintln!("screenshot: {}", e);
+        }
+        return;
     }
     let headless = std::env::args().any(|a| a == "--headless");
     let _lock = match lock_instance() {
@@ -121,9 +110,6 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         install_desktop_entry();
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
     }
 
     let host = Host::new();
@@ -136,113 +122,22 @@ fn main() {
     };
     let _ = std::fs::write(instance_file(), serde_json::json!({"port": port, "token": host.token, "pid": std::process::id()}).to_string());
     host.start_background();
-    let url = format!("http://127.0.0.1:{}/?k={}", port, host.token);
 
     if headless {
-        println!("{}", url);
+        println!("http://127.0.0.1:{}/api/state (cookie fq={})", port, host.token);
         loop {
             std::thread::sleep(Duration::from_secs(3600));
         }
     }
 
-    let event_loop = EventLoopBuilder::<UiCmd>::with_user_event().build();
-    let proxy = event_loop.create_proxy();
-    host.set_ui(Box::new(move |c| {
-        let _ = proxy.send_event(c);
-    }));
     tray::set_sender({
-        let proxy = event_loop.create_proxy();
-        move |c| {
-            let _ = proxy.send_event(c);
-        }
+        let host = host.clone();
+        move |c| host.ui(c)
     });
-
-    let window = WindowBuilder::new()
-        .with_title("Tunn")
-        .with_inner_size(tao::dpi::LogicalSize::new(1100.0, 760.0))
-        .with_min_inner_size(tao::dpi::LogicalSize::new(360.0, 560.0))
-        .with_window_icon(window_icon())
-        .build(&event_loop);
-    let window = match window {
-        Ok(w) => Some(w),
-        Err(_) => None,
-    };
-
-    let ctx_dir = store::data_dir().join("webview");
-    let mut ctx = wry::WebContext::new(Some(ctx_dir));
-    let mut webview = None;
-    if let Some(w) = &window {
-        let builder = wry::WebViewBuilder::new_with_web_context(&mut ctx).with_url(&url);
-        #[cfg(target_os = "linux")]
-        let built = {
-            use tao::platform::unix::WindowExtUnix;
-            use wry::WebViewBuilderExtUnix;
-            builder.build_gtk(w.default_vbox().unwrap())
-        };
-        #[cfg(not(target_os = "linux"))]
-        let built = builder.build(w);
-        match built {
-            Ok(v) => webview = Some(v),
-            Err(e) => eprintln!("webview: {}", e),
-        }
+    let tray_ready = tray::start();
+    if let Err(e) = ui::run(host.clone(), tray_ready) {
+        eprintln!("ui: {}", e);
     }
-    if webview.is_none() {
-        open_in_browser(&url);
-        if let Some(w) = &window {
-            w.set_visible(false);
-        }
-    }
-
-    let host2 = host.clone();
-    let mut tray_icon = None;
-    event_loop.run(move |event, _, flow| {
-        *flow = ControlFlow::Wait;
-        let _keep = (&webview, &ctx);
-        match event {
-            Event::NewEvents(StartCause::Init) => {
-                tray_icon = tray::build().ok();
-            }
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                if tray_icon.is_some() && host2.close_to_tray() {
-                    if let Some(w) = &window {
-                        w.set_visible(false);
-                    }
-                } else {
-                    host2.shutdown();
-                    let _ = std::fs::remove_file(instance_file());
-                    *flow = ControlFlow::Exit;
-                }
-            }
-            Event::UserEvent(cmd) => match cmd {
-                UiCmd::Show => match &window {
-                    Some(w) if webview.is_some() => {
-                        w.set_visible(true);
-                        w.set_minimized(false);
-                        w.set_focus();
-                    }
-                    _ => open_in_browser(&url),
-                },
-                UiCmd::Toggle => {
-                    if let Some(w) = &window {
-                        if w.is_visible() {
-                            w.set_visible(false);
-                        } else {
-                            w.set_visible(true);
-                            w.set_focus();
-                        }
-                    }
-                }
-                UiCmd::Quit => {
-                    host2.shutdown();
-                    let _ = std::fs::remove_file(instance_file());
-                    *flow = ControlFlow::Exit;
-                }
-            },
-            Event::LoopDestroyed => {
-                host2.shutdown();
-                drop(tray_icon.take());
-            }
-            _ => {}
-        }
-    });
+    host.shutdown();
+    let _ = std::fs::remove_file(instance_file());
 }

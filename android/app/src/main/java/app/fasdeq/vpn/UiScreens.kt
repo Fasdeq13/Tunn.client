@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +46,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -94,6 +96,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -142,6 +145,7 @@ fun AppRoot(a: ComposeActivity) {
             }
         }
         BackHandler(enabled = page.value != "home") { page.value = parentOf(page.value) }
+        val wide = LocalConfiguration.current.screenWidthDp >= 720
         val go: (String) -> Unit = { page.value = it }
         val show: (Sheet) -> Unit = { sheet.value = it }
         Scaffold(
@@ -150,6 +154,14 @@ fun AppRoot(a: ComposeActivity) {
             snackbarHost = { SnackbarHost(host, Modifier.navigationBarsPadding()) }
         ) { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
+              if (wide && page.value != "home") {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.width(360.dp).fillMaxHeight()) { SettingsList(a, s, { go("home") }, go) }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        SettingsPage(a, s, if (page.value == "settings") "look" else page.value, show) { go("home") }
+                    }
+                }
+              } else {
                 AnimatedContent(
                     targetState = page.value,
                     transitionSpec = {
@@ -165,11 +177,12 @@ fun AppRoot(a: ComposeActivity) {
                     label = "page"
                 ) { p ->
                     when (p) {
-                        "home" -> HomeScreen(a, s, show) { go("settings") }
+                        "home" -> HomeScreen(a, s, show) { go(if (wide) "look" else "settings") }
                         "settings" -> SettingsList(a, s, { go("home") }, go)
                         else -> SettingsPage(a, s, p, show) { go("settings") }
                     }
                 }
+              }
             }
         }
         SheetHost(a, s, sheet.value, { sheet.value = null }, { sheet.value = it })
@@ -290,7 +303,8 @@ private fun fmtDate(sec: Long): String = SimpleDateFormat("dd.MM.yyyy", Locale.g
 fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: () -> Unit) {
     val listState = rememberLazyListState()
     val compact = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 80
-    val btn = animateDpAsState(if (compact) 84.dp else s.btnSize.dp, tween(480), label = "btn").value
+    val wide = LocalConfiguration.current.screenWidthDp >= 720
+    val btn = animateDpAsState(if (compact && !wide) 84.dp else s.btnSize.dp, tween(480), label = "btn").value
     val label = when (s.status) {
         "On" -> "Подключено"
         "Connecting" -> "Подключаюсь…"
@@ -318,103 +332,116 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
     }
     val busyPing = s.pings.values.any { it.busy }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 26.dp, end = 18.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Tunn", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            FilledTonalIconButton(goSettings, Modifier.size(52.dp)) {
-                Icon(painterResource(R.drawable.ic_settings), "Настройки")
+    val hero: @Composable () -> Unit = {
+    Row(Modifier.fillMaxWidth().padding(start = 26.dp, end = 18.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Tunn", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        FilledTonalIconButton(goSettings, Modifier.size(52.dp)) {
+            Icon(painterResource(R.drawable.ic_settings), "Настройки")
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        PowerButton(s.status, btn, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {
+            when (s.status) {
+                "Off" -> a.requestConnect()
+                "On" -> a.call("disconnect")
+                else -> Unit
             }
         }
-        Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            PowerButton(s.status, btn, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {
-                when (s.status) {
-                    "Off" -> a.requestConnect()
-                    "On" -> a.call("disconnect")
-                    else -> Unit
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Crossfade(label, animationSpec = tween(300), label = "status") {
-                Text(it, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            }
-            AnimatedVisibility(!compact, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(10.dp))
+        Crossfade(label, animationSpec = tween(300), label = "status") {
+            Text(it, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        AnimatedVisibility(!compact, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    sel?.name ?: "Сервер не выбран",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+                val err = s.error
+                if (err != null && s.status == "Off") {
                     Text(
-                        sel?.name ?: "Сервер не выбран",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 32.dp)
+                        err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp, vertical = 4.dp)
                     )
-                    val err = s.error
-                    if (err != null && s.status == "Off") {
-                        Text(
-                            err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp, vertical = 4.dp)
-                        )
-                    }
-                    if (s.update.available) {
-                        TextButton({ a.call("open", s.update.url) }) { Text("Доступна версия ${s.update.tag}, скачать") }
-                    }
+                }
+                if (s.update.available) {
+                    TextButton({ a.call("open", s.update.url) }) { Text("Доступна версия ${s.update.tag}, скачать") }
                 }
             }
         }
-        Spacer(Modifier.height(18.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Серверы", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(end = 14.dp), maxLines = 1)
-                    FilledTonalIconButton({ a.call("checkServices"); a.say("Проверяю сервисы…") }, Modifier.size(42.dp), enabled = !s.checking) {
-                        if (s.checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(painterResource(R.drawable.ic_shield), "Сервисы", Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    FilledTonalIconButton({ a.call("ping") }, Modifier.size(42.dp), enabled = !busyPing) {
-                        if (busyPing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(painterResource(R.drawable.ic_bolt), "Пинг", Modifier.size(22.dp))
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button({ open(Sheet.Add) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp), modifier = Modifier.height(42.dp)) {
-                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Добавить", maxLines = 1, softWrap = false)
-                    }
+    }
+    }
+    val panelBody: @Composable (Modifier, androidx.compose.ui.graphics.Shape) -> Unit = { panelMod, panelShape ->
+    Surface(
+        modifier = panelMod,
+        shape = panelShape,
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Серверы", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(end = 14.dp), maxLines = 1)
+                FilledTonalIconButton({ a.call("checkServices"); a.say("Проверяю сервисы…") }, Modifier.size(42.dp), enabled = !s.checking) {
+                    if (s.checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Icon(painterResource(R.drawable.ic_shield), "Сервисы", Modifier.size(22.dp))
                 }
-                if (s.servers.isEmpty()) {
-                    Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Text("Серверов пока нет", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Добавьте ссылку vless://, trojan://, ss://, wireguard://, awg:// или адрес подписки",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
-                        )
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 28.dp)) {
-                        items(rows, key = {
-                            when (it) {
-                                is Row2.Head -> "h:" + it.name
-                                is Row2.Srv -> "s:" + it.s.id
-                            }
-                        }) { r ->
-                            when (r) {
-                                is Row2.Head -> GroupHead(r, s.localName, collapsed.value.contains(r.name), Modifier.animateItem(), {
-                                    val next = HashSet(collapsed.value)
-                                    if (!next.add(r.name)) next.remove(r.name)
-                                    collapsed.value = next
-                                    a.call("setCollapsed", JSONArray(next.toList()))
-                                }, { open(Sheet.Group(r.name)) })
-                                is Row2.Srv -> ServerRow(a, s, r.s, Modifier.animateItem(), { open(Sheet.Server(r.s.id)) }, { delete.value = r.s })
-                            }
+                Spacer(Modifier.width(6.dp))
+                FilledTonalIconButton({ a.call("ping") }, Modifier.size(42.dp), enabled = !busyPing) {
+                    if (busyPing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Icon(painterResource(R.drawable.ic_bolt), "Пинг", Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Button({ open(Sheet.Add) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp), modifier = Modifier.height(42.dp)) {
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Добавить", maxLines = 1, softWrap = false)
+                }
+            }
+            if (s.servers.isEmpty()) {
+                Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text("Серверов пока нет", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Добавьте ссылку vless://, trojan://, ss://, wireguard://, awg:// или адрес подписки",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 28.dp)) {
+                    items(rows, key = {
+                        when (it) {
+                            is Row2.Head -> "h:" + it.name
+                            is Row2.Srv -> "s:" + it.s.id
+                        }
+                    }) { r ->
+                        when (r) {
+                            is Row2.Head -> GroupHead(r, s.localName, collapsed.value.contains(r.name), Modifier.animateItem(), {
+                                val next = HashSet(collapsed.value)
+                                if (!next.add(r.name)) next.remove(r.name)
+                                collapsed.value = next
+                                a.call("setCollapsed", JSONArray(next.toList()))
+                            }, { open(Sheet.Group(r.name)) })
+                            is Row2.Srv -> ServerRow(a, s, r.s, Modifier.animateItem(), { open(Sheet.Server(r.s.id)) }, { delete.value = r.s })
                         }
                     }
                 }
             }
+        }
+    }
+    }
+    if (wide) {
+        Row(Modifier.fillMaxSize().statusBarsPadding()) {
+            Column(Modifier.weight(0.42f).fillMaxHeight(), verticalArrangement = Arrangement.Top) { hero() }
+            panelBody(Modifier.weight(0.58f).fillMaxHeight().padding(top = 16.dp, end = 16.dp, bottom = 16.dp), RoundedCornerShape(34.dp))
+        }
+    } else {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            hero()
+            Spacer(Modifier.height(18.dp))
+            panelBody(Modifier.fillMaxWidth().weight(1f), RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp))
         }
     }
     val d = delete.value
@@ -528,7 +555,7 @@ fun SubPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) 
             IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1)
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 24.dp).widthIn(max = 720.dp)) {
             content()
         }
     }
@@ -562,7 +589,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.6, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.7, создатели, канал") { go("about") }
     }
 }
 
