@@ -296,14 +296,17 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 @Composable
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
-        var taps by remember { mutableStateOf(0) }
+        val tapTimes = remember { mutableListOf<Long>() }
         var egg by remember { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
             BaseRow("Tunn", "Версия 3.8 · создатель fasdeq13", {
-                taps++
-                if (taps >= 7) {
-                    taps = 0
+                // 3 taps within 5 seconds
+                val now = android.os.SystemClock.elapsedRealtime()
+                tapTimes.add(now)
+                tapTimes.removeAll { now - it > 5_000L }
+                if (tapTimes.size >= 3) {
+                    tapTimes.clear()
                     egg = true
                 }
             })
@@ -346,9 +349,14 @@ fun EggPicture(ctx: android.content.Context, onClose: () -> Unit) {
     }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onClose,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black).clickable { onClose() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
             if (bmp != null) {
                 androidx.compose.foundation.Image(bmp, "icon", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
             } else {
