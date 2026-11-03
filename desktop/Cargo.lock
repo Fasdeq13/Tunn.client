@@ -1212,7 +1212,7 @@ dependencies = [
 
 [[package]]
 name = "fasdeq-core"
-version = "3.7.0"
+version = "3.8.0"
 dependencies = [
  "base64 0.22.1",
  "percent-encoding",
@@ -5277,7 +5277,7 @@ dependencies = [
 
 [[package]]
 name = "tunn"
-version = "3.7.0"
+version = "3.8.0"
 dependencies = [
  "arboard",
  "auto-launch",

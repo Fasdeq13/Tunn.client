@@ -102,8 +102,8 @@ build_windows() {
   local f
   for f in desktop/target/x86_64-pc-windows-gnu/release/tunn.exe desktop/target/release/tunn.exe; do
     if [ -f "$f" ]; then
-      cp "$f" dist/Tunn-3.7-windows.exe
-      say "windows: dist/Tunn-3.7-windows.exe"
+      cp "$f" dist/Tunn-3.8-windows.exe
+      say "windows: dist/Tunn-3.8-windows.exe"
       return 0
     fi
   done
@@ -221,8 +221,8 @@ build_android() {
   if [ "$MODE" = play ]; then
     local aab; aab="$(find android/app/build/outputs/bundle -name '*.aab' | head -1)"
     [ -n "$aab" ] || die "AAB not found"
-    cp "$aab" "dist/Tunn-3.7-play.aab"
-    say "AAB for Google Play: $ROOT/dist/Tunn-3.7-play.aab (signed with your upload key; keep $HOME/.fasdeq/release.jks safe)"
+    cp "$aab" "dist/Tunn-3.8-play.aab"
+    say "AAB for Google Play: $ROOT/dist/Tunn-3.8-play.aab (signed with your upload key; keep $HOME/.fasdeq/release.jks safe)"
     return 0
   fi
   local apk
@@ -230,8 +230,8 @@ build_android() {
   [ -n "$apk" ] || die "APK not found"
   local asg; asg="$(find "${sdk:-$CACHE/android-sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)"
   if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
-  cp "$apk" "dist/Tunn-3.7-$MODE.apk"
-  say "APK: $ROOT/dist/Tunn-3.7-$MODE.apk"
+  cp "$apk" "dist/Tunn-3.8-$MODE.apk"
+  say "APK: $ROOT/dist/Tunn-3.8-$MODE.apk"
 }
 
 case "$TARGET" in

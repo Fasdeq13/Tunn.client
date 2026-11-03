@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,12 +31,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
@@ -292,9 +296,19 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 @Composable
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
+        var taps by remember { mutableStateOf(0) }
+        var egg by remember { mutableStateOf(false) }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.7 · создатель fasdeq13")
+            BaseRow("Tunn", "Версия 3.8 · создатель fasdeq13", {
+                taps++
+                if (taps >= 7) {
+                    taps = 0
+                    egg = true
+                }
+            })
         }
+        if (egg) EggPicture(ctx) { egg = false }
         Section("Участники") {
             BaseRow("Fasdeq13", "Создатель", { a.call("open", "https://github.com/Fasdeq13/FasdeqVPN") })
             BaseRow("montik")
@@ -317,5 +331,29 @@ fun SliderRow(title: String, value: Float, min: Float, max: Float, label: String
             Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         androidx.compose.material3.Slider(v.value, { v.value = it }, valueRange = min..max, enabled = enabled, onValueChangeFinished = { onDone(v.value) })
+    }
+}
+
+@Composable
+fun EggPicture(ctx: android.content.Context, onClose: () -> Unit) {
+    val bmp = remember {
+        try {
+            val name = ctx.assets.list("")?.firstOrNull { it.startsWith("icon.") }
+            if (name == null) null else ctx.assets.open(name).use { android.graphics.BitmapFactory.decodeStream(it) }?.asImageBitmap()
+        } catch (e: Throwable) {
+            null
+        }
+    }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black).clickable { onClose() }, contentAlignment = Alignment.Center) {
+            if (bmp != null) {
+                androidx.compose.foundation.Image(bmp, "icon", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.FillBounds)
+            } else {
+                Text("Положите icon.png, icon.jpg или icon.jpeg в корень проекта и пересоберите", Modifier.padding(32.dp), color = Color.White)
+            }
+        }
     }
 }

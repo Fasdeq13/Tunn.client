@@ -13,8 +13,8 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 28
-        versionName = (project.findProperty("app.vname") as String?) ?: "3.7"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 29
+        versionName = (project.findProperty("app.vname") as String?) ?: "3.8"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {
@@ -100,3 +100,14 @@ dependencies {
     implementation(files("libs/libv2ray.aar"))
     implementation("com.zaneschepke:amneziawg-android:2.3.7")
 }
+
+// Optional picture: put icon.png / icon.jpg / icon.jpeg into the project root, it is bundled as an asset
+val eggRoot = rootProject.projectDir.parentFile
+val eggDir = layout.buildDirectory.dir("egg")
+val eggCopy = tasks.register<Copy>("eggCopy") {
+    from(files(eggRoot.listFiles { f -> f.isFile && f.name.lowercase() in setOf("icon.png", "icon.jpg", "icon.jpeg") }?.toList() ?: emptyList<File>()))
+    rename { it.lowercase() }
+    into(eggDir)
+}
+android.sourceSets.getByName("main").assets.srcDir(eggDir)
+tasks.named("preBuild") { dependsOn(eggCopy) }

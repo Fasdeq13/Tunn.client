@@ -344,17 +344,10 @@ class AppState(private val app: Application) {
         val list = only ?: servers.toList()
         if (list.isEmpty()) return
         checkingServices = true
-        list.forEach { checks[it.id] = ServiceCheck(busy = true) }
+        list.forEach { checks[it.id] = (checks[it.id] ?: ServiceCheck()).copy(busy = true) }
         val unsupported = AtomicBoolean(false)
         scope.launch {
-            val unpinged = list.filter { it.conf != CorePlugins.DPI_CONF && !Wg.isConf(it.conf) && pings[it.id] == null }
-            if (unpinged.isNotEmpty()) {
-                try {
-                    ping(unpinged).join()
-                } catch (e: Exception) {
-                }
-            }
-            val gate = Semaphore(8)
+            val gate = Semaphore(12)
             val saver = launch(Dispatchers.IO) {
                 while (isActive) {
                     delay(3_000L)
@@ -365,26 +358,21 @@ class AppState(private val app: Application) {
                 list.map { server ->
                     launch(Dispatchers.IO) {
                         gate.withPermit {
-                            val pg = pings[server.id]
-                            val dead = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE && !Wg.isConf(server.conf) && server.conf != CorePlugins.DPI_CONF
-                            if (dead) {
-                                synchronized(checks) { checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false) }
-                                return@withPermit
-                            }
                             val config = synchronized(probeLock) { probeConfigFor(server) }
-                            var firstFailed = false
-                            val last = Services.names.size - 1
-                            for (index in 0..last) {
-                                if (unsupported.get()) break
-                                val value = if (config == null) Services.SKIPPED else Services.check(config, index, if (firstFailed) 1 else 2)
-                                if (value == Services.UNSUPPORTED) unsupported.set(true)
-                                val stored = if (value > 0 || value == Services.PARTIAL || value == Services.SKIPPED) value else -1
-                                if (index == 0 && stored == -1) firstFailed = true
-                                synchronized(checks) {
-                                    val current = checks[server.id] ?: ServiceCheck(busy = true)
-                                    checks[server.id] = current.with(index, stored).copy(busy = index < last)
+                            val pingMs = pings[server.id]?.best()?.takeIf { it != Int.MAX_VALUE && it > 0 }
+                            val timeout = if (pingMs == null) 5L else ((pingMs * 8L) / 1000L).coerceIn(3L, 6L)
+                            val left = java.util.concurrent.atomic.AtomicInteger(Services.names.size)
+                            (0 until Services.names.size).map { index ->
+                                launch {
+                                    val value = if (config == null || unsupported.get()) Services.SKIPPED else Services.check(config, index, 3, timeout)
+                                    if (value == Services.UNSUPPORTED) unsupported.set(true)
+                                    val stored = if (value > 0 || value == Services.PARTIAL || value == Services.SKIPPED) value else -1
+                                    synchronized(checks) {
+                                        val current = checks[server.id] ?: ServiceCheck(busy = true)
+                                        checks[server.id] = current.with(index, stored).copy(busy = left.decrementAndGet() > 0)
+                                    }
                                 }
-                            }
+                            }.joinAll()
                             synchronized(checks) {
                                 val current = checks[server.id]
                                 if (current != null && current.busy) checks[server.id] = current.copy(busy = false)

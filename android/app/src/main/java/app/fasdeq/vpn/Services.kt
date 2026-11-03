@@ -86,12 +86,23 @@ object Services {
         }
     }
 
-    fun check(config: String, index: Int, tries: Int = 2): Int {
-        for (u in mirrors[index].take(tries)) {
-            val v = delay(config, u, 5)
-            if (v == UNSUPPORTED) return UNSUPPORTED
-            if (v > 0) return v
+    fun check(config: String, index: Int, tries: Int = 3, timeoutSeconds: Long = 5): Int {
+        val urls = mirrors[index].take(tries)
+        val done = java.util.concurrent.ExecutorCompletionService<Int>(pool)
+        val futures = urls.map { u -> done.submit(Callable { delay(config, u, timeoutSeconds) }) }
+        val deadline = System.nanoTime() + (timeoutSeconds + 1) * 1_000_000_000L
+        try {
+            repeat(urls.size) {
+                val left = deadline - System.nanoTime()
+                if (left <= 0) return -1
+                val f = done.poll(left, TimeUnit.NANOSECONDS) ?: return -1
+                val v = try { f.get() } catch (e: Exception) { -1 }
+                if (v == UNSUPPORTED) return UNSUPPORTED
+                if (v > 0) return v
+            }
+            return -1
+        } finally {
+            futures.forEach { it.cancel(true) }
         }
-        return -1
     }
 }

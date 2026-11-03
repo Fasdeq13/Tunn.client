@@ -4,7 +4,7 @@
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "tunn";
-  version = "3.7.0";
+  version = "3.8.0";
   src = pkgs.lib.cleanSource ./.;
   sourceRoot = "source/desktop";
   cargoLock.lockFile = ./desktop/Cargo.lock;
