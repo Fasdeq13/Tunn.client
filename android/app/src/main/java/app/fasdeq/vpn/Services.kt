@@ -59,50 +59,50 @@ object Services {
             .toString()
     }
 
-    fun delay(config: String, url: String, timeoutSeconds: Long = 9): Int {
+    private val slots = java.util.concurrent.Semaphore(8)
+
+    fun delay(config: String, url: String, timeoutSeconds: Long = 8): Int {
         val method = try {
             Class.forName("libv2ray.Libv2ray")
                 .getMethod("measureOutboundDelay", String::class.java, String::class.java)
         } catch (e: Throwable) {
             return UNSUPPORTED
         }
-        val future = pool.submit(
-            Callable {
-                try {
-                    (method.invoke(null, config, url) as Long).toInt()
-                } catch (e: Throwable) {
-                    -1
+        try {
+            slots.acquire()
+        } catch (e: InterruptedException) {
+            return -1
+        }
+        try {
+            val future = pool.submit(
+                Callable {
+                    try {
+                        (method.invoke(null, config, url) as Long).toInt()
+                    } catch (e: Throwable) {
+                        -1
+                    }
                 }
+            )
+            return try {
+                val value = future.get(timeoutSeconds, TimeUnit.SECONDS)
+                if (value >= 0) value.coerceAtLeast(1) else -1
+            } catch (e: TimeoutException) {
+                future.cancel(true)
+                -1
+            } catch (e: Exception) {
+                -1
             }
-        )
-        return try {
-            val value = future.get(timeoutSeconds, TimeUnit.SECONDS)
-            if (value >= 0) value.coerceAtLeast(1) else -1
-        } catch (e: TimeoutException) {
-            future.cancel(true)
-            -1
-        } catch (e: Exception) {
-            -1
+        } finally {
+            slots.release()
         }
     }
 
-    fun check(config: String, index: Int, tries: Int = 3, timeoutSeconds: Long = 5): Int {
-        val urls = mirrors[index].take(tries)
-        val done = java.util.concurrent.ExecutorCompletionService<Int>(pool)
-        val futures = urls.map { u -> done.submit(Callable { delay(config, u, timeoutSeconds) }) }
-        val deadline = System.nanoTime() + (timeoutSeconds + 1) * 1_000_000_000L
-        try {
-            repeat(urls.size) {
-                val left = deadline - System.nanoTime()
-                if (left <= 0) return -1
-                val f = done.poll(left, TimeUnit.NANOSECONDS) ?: return -1
-                val v = try { f.get() } catch (e: Exception) { -1 }
-                if (v == UNSUPPORTED) return UNSUPPORTED
-                if (v > 0) return v
-            }
-            return -1
-        } finally {
-            futures.forEach { it.cancel(true) }
+    fun check(config: String, index: Int, tries: Int = 3, timeoutSeconds: Long = 8): Int {
+        for (u in mirrors[index].take(tries)) {
+            val v = delay(config, u, timeoutSeconds)
+            if (v == UNSUPPORTED) return UNSUPPORTED
+            if (v > 0) return v
         }
+        return -1
     }
 }

@@ -235,14 +235,43 @@ class AppState(private val app: Application) {
         }
     }
 
+    private var noVpnSince = 0L
+    private var lostRetries = 0
+    private var lostResetAt = 0L
+
     fun syncExternal() {
         val saved = VpnBridge.read(app)
-        val live = saved.first && VpnBridge.live(app)
-        if (live && status == Status.Off && SystemClock.elapsedRealtime() > stopGuardUntil) {
+        val net = VpnBridge.vpnNetwork(app)
+        val now = SystemClock.elapsedRealtime()
+        if (status == Status.On) {
+            if (net) {
+                noVpnSince = 0L
+                if (lostRetries > 0 && now - lostResetAt > 300_000L) lostRetries = 0
+            } else if (noVpnSince == 0L) {
+                noVpnSince = now
+            } else if (now - noVpnSince > 20_000L) {
+                noVpnSince = 0L
+                val retry = lostRetries < 3 && selectedId != null
+                lostRetries++
+                lostResetAt = now
+                stopGuardUntil = now + 4000L
+                sendStop()
+                finishDown(if (retry) "VPN-соединение пропало, подключаюсь заново" else "VPN-соединение пропало")
+                if (retry) {
+                    scope.launch {
+                        delay(2500)
+                        if (status == Status.Off) connect()
+                    }
+                }
+                return
+            }
+        } else {
+            noVpnSince = 0L
+        }
+        val live = saved.first && net
+        if (live && status == Status.Off && now > stopGuardUntil) {
             pendingId = saved.second ?: selectedId
             goUp()
-        } else if (!live && status == Status.On) {
-            finishDown(null)
         }
     }
 
@@ -341,13 +370,13 @@ class AppState(private val app: Application) {
 
     fun checkServices(only: List<Server>? = null) {
         if (checkingServices || servers.isEmpty()) return
-        val list = only ?: servers.toList()
+        val list = (only ?: servers.toList()).sortedBy { pings[it.id]?.best()?.takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
         if (list.isEmpty()) return
         checkingServices = true
         list.forEach { checks[it.id] = (checks[it.id] ?: ServiceCheck()).copy(busy = true) }
         val unsupported = AtomicBoolean(false)
         scope.launch {
-            val gate = Semaphore(12)
+            val gate = Semaphore(6)
             val saver = launch(Dispatchers.IO) {
                 while (isActive) {
                     delay(3_000L)
@@ -359,12 +388,11 @@ class AppState(private val app: Application) {
                     launch(Dispatchers.IO) {
                         gate.withPermit {
                             val config = synchronized(probeLock) { probeConfigFor(server) }
-                            val pingMs = pings[server.id]?.best()?.takeIf { it != Int.MAX_VALUE && it > 0 }
-                            val timeout = if (pingMs == null) 5L else ((pingMs * 8L) / 1000L).coerceIn(3L, 6L)
+                            val timeout = 8L
                             val left = java.util.concurrent.atomic.AtomicInteger(Services.names.size)
                             (0 until Services.names.size).map { index ->
                                 launch {
-                                    val value = if (config == null || unsupported.get()) Services.SKIPPED else Services.check(config, index, 3, timeout)
+                                    val value = if (config == null || unsupported.get()) Services.SKIPPED else Services.check(config, index, 2, timeout)
                                     if (value == Services.UNSUPPORTED) unsupported.set(true)
                                     val stored = if (value > 0 || value == Services.PARTIAL || value == Services.SKIPPED) value else -1
                                     synchronized(checks) {

@@ -112,3 +112,138 @@ pub fn scheme(accent: Rgb, dark: bool, bg: Option<Rgb>, amoled: bool) -> Scheme 
         error: if use_dark { Rgb(0xff, 0xb4, 0xab) } else { Rgb(0xba, 0x1a, 0x1a) },
     }
 }
+
+
+#[derive(Clone, Copy, Default)]
+pub struct SysTheme {
+    pub accent: Option<Rgb>,
+    pub dark: Option<bool>,
+}
+
+#[cfg(target_os = "linux")]
+fn gsetting(key: &str) -> Option<String> {
+    let out = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.interface", key]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().trim_matches('\'').to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(std::path::PathBuf::from)
+}
+
+#[cfg(target_os = "linux")]
+fn gnome_accent() -> Option<Rgb> {
+    let name = gsetting("accent-color")?;
+    let hex = match name.as_str() {
+        "blue" => "#3584e4",
+        "teal" => "#2190a4",
+        "green" => "#3a944a",
+        "yellow" => "#c88800",
+        "orange" => "#ed5b00",
+        "red" => "#e62d42",
+        "pink" => "#d56199",
+        "purple" => "#9141ac",
+        "slate" => "#6f8396",
+        _ => return None,
+    };
+    parse_hex(hex)
+}
+
+#[cfg(target_os = "linux")]
+fn gtk_css_accent() -> Option<Rgb> {
+    let home = home()?;
+    for dir in ["gtk-4.0", "gtk-3.0"] {
+        let Ok(text) = std::fs::read_to_string(home.join(".config").join(dir).join("gtk.css")) else { continue };
+        for key in ["accent_bg_color", "accent_color", "theme_selected_bg_color", "selected_bg_color"] {
+            for line in text.lines() {
+                let l = line.trim();
+                if let Some(rest) = l.strip_prefix("@define-color") {
+                    let mut it = rest.split_whitespace();
+                    if it.next() == Some(key) {
+                        if let Some(v) = it.next() {
+                            if let Some(c) = parse_hex(v.trim_end_matches(';')) {
+                                return Some(c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn rgb_list(v: &str) -> Option<Rgb> {
+    let p: Vec<u8> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+    if p.len() >= 3 {
+        Some(Rgb(p[0], p[1], p[2]))
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn kde() -> (Option<Rgb>, Option<bool>) {
+    let Some(home) = home() else { return (None, None) };
+    let Ok(text) = std::fs::read_to_string(home.join(".config/kdeglobals")) else { return (None, None) };
+    let mut section = String::new();
+    let (mut accent, mut sel, mut win, mut scheme) = (None, None, None, String::new());
+    for line in text.lines() {
+        let l = line.trim();
+        if l.starts_with('[') {
+            section = l.to_string();
+        } else if let Some((k, v)) = l.split_once('=') {
+            match (section.as_str(), k) {
+                ("[General]", "AccentColor") => accent = rgb_list(v),
+                ("[General]", "ColorScheme") => scheme = v.to_lowercase(),
+                ("[Colors:Selection]", "BackgroundNormal") => sel = rgb_list(v),
+                ("[Colors:Window]", "BackgroundNormal") => win = rgb_list(v),
+                _ => {}
+            }
+        }
+    }
+    let dark = win.map(|w| lum(w) < 0.5).or(if scheme.is_empty() { None } else { Some(scheme.contains("dark")) });
+    (accent.or(sel), dark)
+}
+
+#[cfg(target_os = "linux")]
+fn detect() -> SysTheme {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+    let qt_first = desktop.contains("kde") || std::env::var("QT_QPA_PLATFORMTHEME").map(|v| v.contains("kde")).unwrap_or(false);
+    let (kaccent, kdark) = kde();
+    let gdark = gsetting("color-scheme").and_then(|v| match v.as_str() {
+        "prefer-dark" => Some(true),
+        "prefer-light" => Some(false),
+        _ => gsetting("gtk-theme").map(|t| t.to_lowercase().contains("dark")),
+    });
+    let gaccent = gnome_accent().or_else(gtk_css_accent);
+    if qt_first {
+        SysTheme { accent: kaccent.or(gaccent), dark: kdark.or(gdark) }
+    } else {
+        SysTheme { accent: gaccent.or(kaccent), dark: gdark.or(kdark) }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect() -> SysTheme {
+    SysTheme::default()
+}
+
+pub fn system() -> SysTheme {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, SysTheme)>> = Mutex::new(None);
+    let mut c = CACHE.lock().unwrap();
+    if let Some((t, v)) = *c {
+        if t.elapsed() < Duration::from_secs(4) {
+            return v;
+        }
+    }
+    let v = detect();
+    *c = Some((Instant::now(), v));
+    v
+}

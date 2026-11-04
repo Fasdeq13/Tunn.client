@@ -178,17 +178,23 @@ pub fn resolve(outbound: &mut Value) {
 }
 
 pub fn fetch_meta(url: &str) -> Res<Fetched> {
+    fetch_meta_with(url, &[])
+}
+
+pub fn fetch_meta_with(url: &str, extra: &[(&str, String)]) -> Res<Fetched> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(20)))
         .timeout_connect(Some(Duration::from_secs(10)))
         .http_status_as_error(false)
         .build()
         .into();
-    let mut resp = agent
-        .get(url)
-        .header("User-Agent", "Tunn/1.0")
-        .call()
-        .map_err(|e| e.to_string())?;
+    let mut req = agent.get(url).header("User-Agent", "Tunn/1.0");
+    for (k, v) in extra {
+        if !v.is_empty() {
+            req = req.header(*k, v.as_str());
+        }
+    }
+    let mut resp = req.call().map_err(|e| e.to_string())?;
     let code = resp.status().as_u16();
     if !(200..300).contains(&code) {
         return Err(format!("HTTP {}", code));

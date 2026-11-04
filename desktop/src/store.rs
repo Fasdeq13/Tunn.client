@@ -18,6 +18,10 @@ pub struct Store {
     pub collapsed: Vec<String>,
     pub notice: bool,
     pub hwid: String,
+    pub hw_os: String,
+    pub hw_ver: String,
+    pub hw_model: String,
+    pub setup: bool,
     pub skip_update: String,
 }
 

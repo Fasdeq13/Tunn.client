@@ -30,17 +30,7 @@ object VpnBridge {
         }
     }
 
-    fun live(context: Context): Boolean {
-        val running = try {
-            val am = context.getSystemService(ActivityManager::class.java)
-            @Suppress("DEPRECATION")
-            am.getRunningServices(Int.MAX_VALUE).any {
-                it.service.className == FasdeqVpnService::class.java.name
-            }
-        } catch (e: Throwable) {
-            false
-        }
-        if (running) return true
+    fun vpnNetwork(context: Context): Boolean {
         return try {
             val cm = context.getSystemService(ConnectivityManager::class.java)
             @Suppress("DEPRECATION")
@@ -51,6 +41,20 @@ object VpnBridge {
             false
         }
     }
+
+    fun serviceRunning(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(ActivityManager::class.java)
+            @Suppress("DEPRECATION")
+            am.getRunningServices(Int.MAX_VALUE).any {
+                it.service.className == FasdeqVpnService::class.java.name
+            }
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    fun live(context: Context): Boolean = vpnNetwork(context)
 
     fun send(context: Context, up: Boolean, message: String?) {
         try {

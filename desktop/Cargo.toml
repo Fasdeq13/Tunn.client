@@ -22,6 +22,7 @@ tiny_http = "0.12"
 directories = "6"
 slint = { version = "1", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2"] }
 tray-icon = { version = "0.21", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rfd = "0.15"
 auto-launch = "0.5"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }

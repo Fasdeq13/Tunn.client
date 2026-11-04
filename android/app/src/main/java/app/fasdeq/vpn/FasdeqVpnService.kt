@@ -613,6 +613,7 @@ class FasdeqVpnService : VpnService() {
                         lastTx = tx
                         ok = stuck < 4
                     }
+                    if (ok && !VpnBridge.vpnNetwork(this)) ok = false
                     if (ok) {
                         bad = 0
                         if (port > 0) stuck = 0

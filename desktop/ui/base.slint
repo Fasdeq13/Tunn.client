@@ -36,6 +36,15 @@ export struct Row {
     letter: string,
 }
 
+export struct Comp {
+    key: string,
+    name: string,
+    installed: string,
+    versions: [string],
+    sel: int,
+    note: string,
+}
+
 export component Icon inherits Image {
     in property <color> tint: Pal.on-surface;
     colorize: tint;

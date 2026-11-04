@@ -46,6 +46,11 @@ pub fn ensure_go(progress: &dyn Fn(&str)) -> Result<PathBuf, String> {
     if let Some(p) = which("amneziawg-go") {
         return Ok(p);
     }
+    fetch_go(progress)
+}
+
+fn fetch_go(progress: &dyn Fn(&str)) -> Result<PathBuf, String> {
+    let own = bin_dir().join("amneziawg-go");
     progress("Скачиваю amneziawg-go…");
     let name = format!("amneziawg-go-linux-{}", arch()?);
     let download: Result<(), String> = (|| {
@@ -86,6 +91,18 @@ pub fn ensure_go(progress: &dyn Fn(&str)) -> Result<PathBuf, String> {
     ))
 }
 
+pub fn installed() -> Option<String> {
+    if works(&bin_dir().join("amneziawg-go")) {
+        return Some("в папке Tunn".into());
+    }
+    which("amneziawg-go").map(|_| "системный".into())
+}
+
+pub fn install(progress: &dyn Fn(&str)) -> Result<PathBuf, String> {
+    let _ = std::fs::remove_file(bin_dir().join("amneziawg-go"));
+    fetch_go(progress)
+}
+
 fn ensure_helper() -> Result<PathBuf, String> {
     let p = bin_dir().join("tunn-helper");
     let same = std::fs::read(&p).map(|c| c == HELPER).unwrap_or(false);
@@ -106,9 +123,9 @@ fn find_tool(name: &str, extra: &[&str]) -> Option<PathBuf> {
 }
 
 pub fn start(conf: &str, progress: &dyn Fn(&str)) -> Result<Proc, String> {
-    let Some(pkexec) = which("pkexec") else {
-        return Err("Для WireGuard нужен pkexec (polkit)".into());
-    };
+    if !crate::elevate::available() {
+        return Err("Для WireGuard нужен sudo или pkexec".into());
+    }
     if !Path::new("/dev/net/tun").exists() {
         return Err("Нет /dev/net/tun. Загрузите модуль: sudo modprobe tun".into());
     }
@@ -130,7 +147,8 @@ pub fn start(conf: &str, progress: &dyn Fn(&str)) -> Result<Proc, String> {
     let log = data_dir().join("core.log");
     let _ = std::fs::write(&log, b"");
     let lf = std::fs::OpenOptions::new().append(true).open(&log).ok();
-    let mut cmd = Command::new(pkexec);
+    let way = crate::elevate::prepare()?;
+    let mut cmd = crate::elevate::base(&way);
     cmd.arg(&helper)
         .arg("run")
         .arg(&go)
@@ -150,7 +168,7 @@ pub fn start(conf: &str, progress: &dyn Fn(&str)) -> Result<Proc, String> {
             None => Stdio::null(),
         });
     progress("Запрашиваю доступ для WireGuard…");
-    let child = cmd.spawn().map_err(|e| format!("Не удалось запустить pkexec: {}", e))?;
+    let child = crate::elevate::spawn(&way, cmd)?;
     let mut proc = Proc::new(child, cfg, Some(stop));
     let end = Instant::now() + Duration::from_secs(120);
     loop {
@@ -162,8 +180,7 @@ pub fn start(conf: &str, progress: &dyn Fn(&str)) -> Result<Proc, String> {
             proc.forget_stop();
             let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
             return Err(match status.code() {
-                Some(126) => "Доступ отклонён или пароль не введён".to_string(),
-                Some(127) => "Не найден polkit-агент для запроса пароля".to_string(),
+                Some(126) | Some(127) => crate::elevate::hint(status.code(), &last),
                 _ => if last.is_empty() { "WireGuard не запустился".to_string() } else { last },
             });
         }

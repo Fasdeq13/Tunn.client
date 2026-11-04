@@ -5258,6 +5258,7 @@ dependencies = [
  "fasdeq-core",
  "flate2",
  "gtk",
+ "image",
  "rand",
  "resvg 0.45.1",
  "rfd",

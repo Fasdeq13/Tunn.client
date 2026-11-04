@@ -11,6 +11,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+fn components_present(active: &str) -> bool {
+    xray::find_binary(active).is_some() || singbox::find_binary().is_some()
+}
+
 pub const VERSION: &str = "3.8";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -326,6 +330,10 @@ impl Host {
             collapsed: s.collapsed.clone(),
             notice: s.notice,
             hwid: s.hwid.clone(),
+            hw_os: s.hw_os.clone(),
+            hw_ver: s.hw_ver.clone(),
+            hw_model: s.hw_model.clone(),
+            setup: s.setup,
             skip_update: s.skip_update.clone(),
         }
         .save();
@@ -391,6 +399,7 @@ impl Host {
             "settings": settings,
             "plugins": {"list": [], "engine": "", "busy": null, "ui": [], "catalog": null, "families": []},
             "notice": !s.notice,
+            "setup": {"needed": !s.setup && !components_present(&s.settings.active_core), "busy": g.core_busy},
             "services": {"names": SERVICE_NAMES, "checking": g.checking, "checks": pv["checks"], "best": pv["best"]},
             "cores": {
                 "active": s.settings.active_core,
@@ -529,6 +538,135 @@ impl Host {
                 let _ = h.connect_inner(true, true);
             });
         }
+    }
+
+    fn device_defaults() -> (String, String, String) {
+        let os = match std::env::consts::OS {
+            "linux" => "Linux",
+            "windows" => "Windows",
+            "macos" => "macOS",
+            o => o,
+        }
+        .to_string();
+        let mut ver = String::new();
+        if cfg!(target_os = "linux") {
+            if let Ok(t) = std::fs::read_to_string("/etc/os-release") {
+                for key in ["PRETTY_NAME=", "VERSION_ID="] {
+                    if let Some(l) = t.lines().find(|l| l.starts_with(key)) {
+                        ver = l[key.len()..].trim_matches('"').to_string();
+                        break;
+                    }
+                }
+            }
+            if ver.is_empty() {
+                ver = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim().to_string();
+            }
+        } else if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "ver"]);
+            fasdeq_core::proc::hide_window(&mut c);
+            if let Ok(o) = c.output() {
+                let t = String::from_utf8_lossy(&o.stdout).to_string();
+                ver = t.split("Version").nth(1).map(|v| v.trim().trim_end_matches(']').trim().to_string()).unwrap_or_else(|| t.trim().to_string());
+            }
+        }
+        let model = std::env::var("HOSTNAME")
+            .ok()
+            .or_else(|| std::env::var("COMPUTERNAME").ok())
+            .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|h| h.trim().to_string()))
+            .filter(|h| !h.is_empty())
+            .unwrap_or_else(|| "Tunn desktop".into());
+        (os, ver, model)
+    }
+
+    fn identity(&self) -> (String, String, String, String) {
+        let mut g = self.inner.lock().unwrap();
+        if g.store.hwid.is_empty() {
+            g.store.hwid = format!("{:016x}", rand::random::<u64>());
+            self.save_locked(&g);
+        }
+        let (os, ver, model) = Host::device_defaults();
+        let s = &g.store;
+        let pick = |own: &String, def: String| if own.trim().is_empty() { def } else { own.trim().to_string() };
+        (s.hwid.clone(), pick(&s.hw_os, os), pick(&s.hw_ver, ver), pick(&s.hw_model, model))
+    }
+
+    fn device_headers(&self) -> Vec<(&'static str, String)> {
+        let (hwid, os, ver, model) = self.identity();
+        vec![("x-hwid", hwid), ("x-device-os", os), ("x-ver-os", ver), ("x-device-model", model)]
+    }
+
+    fn components_info(&self) -> Value {
+        let active = self.inner.lock().unwrap().store.settings.active_core.clone();
+        let mut items = Vec::new();
+        {
+            let installed = xray::list().into_iter().find(|c| c.id == active).map(|c| c.version).filter(|v| !v.is_empty()).or_else(|| xray::find_binary(&active).map(|_| "найден".to_string()));
+            let (versions, note) = match xray::releases() {
+                Ok(r) => {
+                    self.inner.lock().unwrap().releases = Some(r.clone());
+                    (r.iter().take(8).map(|x| x.tag.clone()).collect::<Vec<_>>(), String::new())
+                }
+                Err(e) => (Vec::new(), e),
+            };
+            items.push(json!({"key": "xray", "name": "Xray", "installed": installed.unwrap_or_default(), "versions": versions, "note": note}));
+        }
+        {
+            let installed = singbox::installed_version().or_else(|| singbox::find_binary().map(|_| "системный".to_string()));
+            let (versions, note) = match singbox::releases() {
+                Ok(r) => (r.iter().take(8).map(|x| x.tag.clone()).collect::<Vec<_>>(), String::new()),
+                Err(e) => (Vec::new(), e),
+            };
+            items.push(json!({"key": "singbox", "name": "sing-box", "installed": installed.unwrap_or_default(), "versions": versions, "note": note}));
+        }
+        #[cfg(target_os = "linux")]
+        items.push(json!({"key": "awg", "name": "AmneziaWG", "installed": crate::wg_linux::installed().unwrap_or_default(), "versions": ["последняя"], "note": ""}));
+        json!({"items": items})
+    }
+
+    fn components_install(&self, picks: &Value) -> Value {
+        let mut errors: Vec<String> = Vec::new();
+        if let Some(tag) = picks["xray"].as_str().filter(|t| !t.is_empty()) {
+            self.set_core_busy(Some(format!("Скачиваю Xray {}…", tag)));
+            let r = (|| -> Result<(), String> {
+                let rel = xray::releases()?;
+                let want = rel.iter().find(|x| x.tag == tag).or(rel.first()).ok_or("Нет доступных версий Xray")?;
+                let raw = xray::download(&want.url)?;
+                let info = xray::install(&raw, "")?;
+                self.inner.lock().unwrap().store.settings.active_core = info.id;
+                Ok(())
+            })();
+            if let Err(e) = r {
+                errors.push(format!("Xray: {}", e));
+            }
+        }
+        if let Some(tag) = picks["singbox"].as_str().filter(|t| !t.is_empty()) {
+            self.set_core_busy(Some(format!("Скачиваю sing-box {}…", tag)));
+            let r = (|| -> Result<(), String> {
+                let list = singbox::releases()?;
+                let want = list.iter().find(|x| x.tag.trim_start_matches('v') == tag.trim_start_matches('v')).or(list.first()).ok_or("Нет доступных версий sing-box")?;
+                singbox::install_release(want).map(|_| ())
+            })();
+            if let Err(e) = r {
+                errors.push(format!("sing-box: {}", e));
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if picks["awg"].as_str().map(|t| !t.is_empty()).unwrap_or(false) {
+            self.set_core_busy(Some("Скачиваю AmneziaWG…".into()));
+            if let Err(e) = crate::wg_linux::install(&|m| self.set_core_busy(Some(m.into()))) {
+                errors.push(format!("AmneziaWG: {}", e));
+            }
+        }
+        self.set_core_busy(None);
+        {
+            let mut g = self.inner.lock().unwrap();
+            if errors.is_empty() {
+                g.store.setup = true;
+            }
+            self.save_locked(&g);
+        }
+        self.push_state();
+        json!({"errors": errors})
     }
 
     fn ensure_core(&self) -> Result<PathBuf, String> {
@@ -873,20 +1011,24 @@ impl Host {
         self.push_pings();
         let queue = Arc::new(Mutex::new(list));
         let mut handles = Vec::new();
-        for _ in 0..8 {
+        for _ in 0..4 {
             let q = queue.clone();
             let h = self.clone();
             let bin = bin.clone();
             handles.push(std::thread::spawn(move || loop {
                 let next = q.lock().unwrap().pop();
                 let Some(server) = next else { break };
-                let r = xray::check_server(&bin, &server.conf, 12);
+                #[cfg(target_os = "linux")]
+                let wg = crate::wg_linux::is_conf(&server.conf);
+                #[cfg(not(target_os = "linux"))]
+                let wg = false;
+                let r = if wg { Ok([-4; 3]) } else { xray::check_server(&bin, &server.conf, 8) };
                 let mut g = h.inner.lock().unwrap();
                 let c = match r {
                     Ok(v) => {
                         let mut ms = [None; 3];
                         for i in 0..3 {
-                            ms[i] = Some(if v[i] > 0 { v[i] } else { -1 });
+                            ms[i] = Some(if v[i] > 0 || v[i] == -4 { v[i] } else { -1 });
                         }
                         ServiceCheck { ms, busy: false }
                     }
@@ -923,7 +1065,7 @@ impl Host {
         let mut direct = Vec::new();
         for source in prepared.items {
             if source.is_url {
-                let fetched = links::fetch_meta(&source.value).map_err(|e| format!("Не удалось загрузить список: {}", e))?;
+                let fetched = links::fetch_meta_with(&source.value, &self.device_headers()).map_err(|e| format!("Не удалось загрузить список: {}", e))?;
                 let group_name = match &force_group {
                     Some(g) => g.clone(),
                     None => {
@@ -1399,6 +1541,43 @@ impl Host {
                     let _ = c.set_text(text.clone());
                 }
                 push = false;
+                json!({})
+            }
+            "hwidInfo" => {
+                let (hwid, os, ver, model) = self.identity();
+                push = false;
+                json!({"hwid": hwid, "os": os, "ver": ver, "model": model})
+            }
+            "hwidSet" => {
+                let mut g = self.inner.lock().unwrap();
+                g.store.hw_os = payload["os"].as_str().unwrap_or("").trim().to_string();
+                g.store.hw_ver = payload["ver"].as_str().unwrap_or("").trim().to_string();
+                g.store.hw_model = payload["model"].as_str().unwrap_or("").trim().to_string();
+                self.save_locked(&g);
+                push = false;
+                json!({})
+            }
+            "hwidDefaults" => {
+                let mut g = self.inner.lock().unwrap();
+                g.store.hw_os.clear();
+                g.store.hw_ver.clear();
+                g.store.hw_model.clear();
+                self.save_locked(&g);
+                push = false;
+                json!({})
+            }
+            "componentsInfo" => {
+                push = false;
+                self.components_info()
+            }
+            "componentsInstall" => {
+                push = false;
+                self.components_install(payload)
+            }
+            "setupDone" => {
+                let mut g = self.inner.lock().unwrap();
+                g.store.setup = true;
+                self.save_locked(&g);
                 json!({})
             }
             "hwid" | "hwidReset" => {

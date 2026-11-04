@@ -1,5 +1,4 @@
 use crate::links;
-use crate::model::{SERVICE_URLS};
 use crate::store::data_dir;
 use serde_json::Value;
 use std::io::{Cursor, Read};
@@ -74,6 +73,13 @@ pub fn delete(id: &str) {
 }
 
 pub fn which(name: &str) -> Option<PathBuf> {
+    if name == "pkexec" {
+        for p in ["/run/wrappers/bin/pkexec", "/usr/bin/pkexec", "/bin/pkexec"] {
+            if Path::new(p).is_file() {
+                return Some(PathBuf::from(p));
+            }
+        }
+    }
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|p| p.join(name))
@@ -440,43 +446,74 @@ pub fn query_stats(bin: &Path, api_port: u16) -> Option<(u64, u64)> {
     Some((down, up))
 }
 
-fn probe(port: u16, url: &str, timeout: u64) -> i32 {
-    let proxy = match ureq::Proxy::new(&format!("socks5h://127.0.0.1:{}", port)) {
-        Ok(p) => p,
-        Err(_) => return -1,
-    };
+const MIRRORS: [[&str; 3]; 3] = [
+    ["https://discord.com/api/v9/gateway", "https://discordapp.com/api/v9/gateway", "https://cdn.discordapp.com/embed/avatars/0.png"],
+    ["https://telegram.org/", "https://web.telegram.org/a/", "https://core.telegram.org/api"],
+    ["https://www.youtube.com/generate_204", "https://i.ytimg.com/vi/jNQXAC9IVRw/default.jpg", "https://www.youtube.com/robots.txt"],
+];
+
+fn probe_once(port: u16, url: &str, timeout: u64) -> Result<i32, String> {
+    let proxy = ureq::Proxy::new(&format!("socks5h://127.0.0.1:{}", port)).map_err(|e| e.to_string())?;
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .proxy(Some(proxy))
         .timeout_global(Some(Duration::from_secs(timeout)))
         .http_status_as_error(false)
         .max_redirects(0)
+        .max_redirects_will_error(false)
         .build()
         .into();
     let t0 = Instant::now();
-    match agent.get(url).header("User-Agent", "Tunn/1.4").call() {
-        Ok(_) => (t0.elapsed().as_millis() as i32).max(1),
-        Err(_) => -1,
+    agent.get(url).header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) Tunn").call().map_err(|e| e.to_string())?;
+    Ok((t0.elapsed().as_millis() as i32).max(1))
+}
+
+#[cfg(test)]
+fn probe(port: u16, url: &str, timeout: u64) -> i32 {
+    probe_once(port, url, timeout).unwrap_or(-1)
+}
+
+fn probe_service(port: u16, index: usize, timeout: u64, log: &mut Vec<String>) -> i32 {
+    let list = MIRRORS[index];
+    let order = [list[0], list[0], list[1], list[2]];
+    for url in order {
+        match probe_once(port, url, timeout) {
+            Ok(ms) => return ms,
+            Err(e) => log.push(format!("{} -> {}", url, e)),
+        }
     }
+    -1
 }
 
 pub fn check_server(bin: &Path, conf: &str, timeout: u64) -> Result<[i32; 3], String> {
-    let mut parsed = links::parse(conf)?;
+    let mut parsed = match links::parse(conf) {
+        Ok(p) => p,
+        Err(_) => return Ok([-4; 3]),
+    };
     links::resolve(&mut parsed.outbound);
     let port = free_port();
     let cfg = links::probe_config(parsed.outbound, port);
     let mut proc = start(bin, &cfg, port)?;
-    let handles: Vec<_> = SERVICE_URLS
-        .iter()
-        .map(|url| {
-            let url = url.to_string();
-            std::thread::spawn(move || probe(port, &url, timeout))
+    let handles: Vec<_> = (0..3)
+        .map(|i| {
+            std::thread::spawn(move || {
+                let mut log = Vec::new();
+                let v = probe_service(port, i, timeout, &mut log);
+                (v, log)
+            })
         })
         .collect();
     let mut result = [-1i32; 3];
+    let mut notes = Vec::new();
     for (i, h) in handles.into_iter().enumerate() {
-        result[i] = h.join().unwrap_or(-1);
+        if let Ok((v, log)) = h.join() {
+            result[i] = v;
+            notes.extend(log);
+        }
     }
     proc.stop();
+    if result.iter().all(|v| *v < 0) {
+        let _ = std::fs::write(data_dir().join("services.log"), notes.join("\n"));
+    }
     Ok(result)
 }
 
@@ -649,17 +686,18 @@ exit 0
 
 #[cfg(target_os = "linux")]
 pub fn tun_possible() -> bool {
-    which("pkexec").is_some() && Path::new("/dev/net/tun").exists()
+    crate::elevate::available() && Path::new("/dev/net/tun").exists()
 }
 
 #[cfg(target_os = "linux")]
 pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, String> {
-    let Some(pkexec) = which("pkexec") else {
-        return Err("Для TUN нужен pkexec (polkit). Установите polkit или выберите режим «Системный прокси»".into());
-    };
+    if !crate::elevate::available() {
+        return Err("Для TUN нужен sudo или pkexec. Установите один из них или выберите режим «Системный прокси»".into());
+    }
     if !Path::new("/dev/net/tun").exists() {
         return Err("Нет /dev/net/tun. Загрузите модуль: sudo modprobe tun".into());
     }
+    let way = crate::elevate::prepare()?;
     if let Some(arr) = config["inbounds"].as_array_mut() {
         arr.push(serde_json::json!({
             "tag": "tun-in",
@@ -688,7 +726,7 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
     let _ = std::fs::remove_file(&stop);
     let log = data_dir().join("tun.log");
     let log_file = std::fs::File::create(&log).ok();
-    let mut cmd = Command::new(pkexec);
+    let mut cmd = crate::elevate::base(&way);
     cmd.arg("/bin/sh")
         .arg("-c")
         .arg(TUN_SCRIPT)
@@ -707,7 +745,7 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
             Some(f) => Stdio::from(f),
             None => Stdio::null(),
         });
-    let child = cmd.spawn().map_err(|e| format!("Не удалось запустить pkexec: {}", e))?;
+    let child = crate::elevate::spawn(&way, cmd)?;
     let mut proc = Proc { child, config: path, stop_file: Some(stop) };
     let end = Instant::now() + Duration::from_secs(120);
     loop {
@@ -716,8 +754,7 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
                 let text = std::fs::read_to_string(&log).unwrap_or_default();
                 let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
                 let hint = match status.code() {
-                    Some(126) => "Доступ отклонён или пароль не введён".to_string(),
-                    Some(127) => "Не найден polkit-агент для запроса пароля. Запустите hyprpolkitagent или polkit-gnome, либо выберите режим «Системный прокси»".to_string(),
+                    Some(126) | Some(127) => crate::elevate::hint(status.code(), &last),
                     Some(3) | Some(4) | Some(6) => format!("Не удалось поднять TUN: {}", if last.is_empty() { "ядро не создало интерфейс" } else { &last }),
                     _ => if last.is_empty() { "TUN не запустился".to_string() } else { last.clone() },
                 };
@@ -744,4 +781,39 @@ pub fn start_tun(bin: &Path, mut config: Value, wait_port: u16) -> Result<Proc, 
 #[cfg(not(target_os = "linux"))]
 pub fn tun_possible() -> bool {
     false
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    #[ignore]
+    fn probe_through_xray_freedom() {
+        let bin = std::env::var("XRAY_BIN").map(PathBuf::from).expect("XRAY_BIN");
+        let srv = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let sp = srv.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in srv.incoming().flatten() {
+                let mut s = s;
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf);
+                let line = String::from_utf8_lossy(&buf).to_string();
+                if line.starts_with("GET /redir") {
+                    let _ = s.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9/x\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                } else {
+                    let _ = s.write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
+                }
+            }
+        });
+        let port = free_port();
+        let cfg = links::probe_config(serde_json::json!({"protocol": "freedom", "settings": {}}), port);
+        let mut proc = start(&bin, &cfg, port).expect("xray start");
+        let ms = probe(port, &format!("http://127.0.0.1:{}/", sp), 8);
+        let redir = probe(port, &format!("http://127.0.0.1:{}/redir", sp), 8);
+        proc.stop();
+        println!("REDIRECT PROBE {}", redir);
+        assert!(ms > 0, "probe returned {}", ms);
+    }
 }

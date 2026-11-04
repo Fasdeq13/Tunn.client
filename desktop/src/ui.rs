@@ -2,7 +2,7 @@
 use crate::host::{Host, UiCmd};
 use crate::palette::{self, Rgb};
 use serde_json::{json, Value};
-use slint::{Color, ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -78,11 +78,18 @@ struct State {
 fn scheme_for(snap: &Value) -> (palette::Scheme, String) {
     let st = &snap["settings"];
     let theme = st["theme"].as_i64().unwrap_or(0);
-    let dark = theme != 1;
-    let accent = st["accentHex"].as_str().and_then(palette::parse_hex).unwrap_or(Rgb(0x4F, 0xD8, 0xC8));
+    let sys = palette::system();
+    let dynamic = st["dynamic"].as_bool().unwrap_or(false);
+    let dark = match theme {
+        1 => false,
+        2 => true,
+        _ => sys.dark.unwrap_or(true),
+    };
+    let own = st["accentHex"].as_str().and_then(palette::parse_hex).unwrap_or(Rgb(0x4F, 0xD8, 0xC8));
+    let accent = if dynamic { sys.accent.unwrap_or(own) } else { own };
     let bg = if st["bgCustom"].as_bool().unwrap_or(false) { st["bgHex"].as_str().and_then(palette::parse_hex) } else { None };
     let amoled = st["amoled"].as_bool().unwrap_or(false);
-    let key = format!("{}{}{:?}{}", theme, st["accentHex"], bg.map(|b| (b.0, b.1, b.2)), amoled);
+    let key = format!("{}{}{}{:?}{}{}", theme, dynamic, dark, (accent.0, accent.1, accent.2), bg.map(|b| (b.0, b.1, b.2)).is_some(), amoled);
     (palette::scheme(accent, dark, bg, amoled), key)
 }
 
@@ -182,6 +189,92 @@ fn build_rows(snap: &Value, sch: &palette::Scheme) -> Vec<Row> {
     rows
 }
 
+fn toast(weak: &slint::Weak<App>, text: &str) {
+    let text = text.to_string();
+    let w = weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(a) = w.upgrade() {
+            a.global::<Ui>().set_toast(text.into());
+        }
+    });
+}
+
+fn load_device(host: &Arc<Host>, weak: &slint::Weak<App>) {
+    let h = host.clone();
+    let weak = weak.clone();
+    std::thread::spawn(move || {
+        let r = h.act("hwidInfo", &Value::Null);
+        let get = |k: &str| r[k].as_str().unwrap_or("").to_string();
+        let (id, os, ver, model) = (get("hwid"), get("os"), get("ver"), get("model"));
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(a) = weak.upgrade() {
+                let ui = a.global::<Ui>();
+                ui.set_hwid(id.into());
+                ui.set_hw_os(os.into());
+                ui.set_hw_ver(ver.into());
+                ui.set_hw_model(model.into());
+            }
+        });
+    });
+}
+
+fn load_comps(host: &Arc<Host>, weak: &slint::Weak<App>) {
+    if let Some(a) = weak.upgrade() {
+        a.global::<Ui>().set_setup_loading(true);
+    }
+    let h = host.clone();
+    let weak = weak.clone();
+    std::thread::spawn(move || {
+        let r = h.act("componentsInfo", &Value::Null);
+        let items = r["items"].as_array().cloned().unwrap_or_default();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(a) = weak.upgrade() {
+                let ui = a.global::<Ui>();
+                let rows: Vec<Comp> = items
+                    .iter()
+                    .map(|c| {
+                        let versions: Vec<SharedString> = c["versions"].as_array().map(|v| v.iter().filter_map(|x| x.as_str().map(SharedString::from)).collect()).unwrap_or_default();
+                        let installed = c["installed"].as_str().unwrap_or("").to_string();
+                        let sel = if installed.is_empty() && !versions.is_empty() { 0 } else { -1 };
+                        Comp {
+                            key: c["key"].as_str().unwrap_or("").into(),
+                            name: c["name"].as_str().unwrap_or("").into(),
+                            installed: installed.into(),
+                            versions: ModelRc::new(VecModel::from(versions)),
+                            sel,
+                            note: c["note"].as_str().unwrap_or("").into(),
+                        }
+                    })
+                    .collect();
+                ui.set_comps(ModelRc::new(VecModel::from(rows)));
+                ui.set_setup_loading(false);
+            }
+        });
+    });
+}
+
+fn load_egg() -> Option<slint::Image> {
+    const EMBED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.bin"));
+    let mut data: Vec<u8> = EMBED.to_vec();
+    if data.is_empty() {
+        if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+            for name in ["icon.png", "icon.jpg", "icon.jpeg"] {
+                if let Ok(b) = std::fs::read(dir.join(name)) {
+                    data = b;
+                    break;
+                }
+            }
+        }
+    }
+    if data.is_empty() {
+        return None;
+    }
+    let img = image::load_from_memory(&data).ok()?.to_rgba8();
+    let (w, h) = img.dimensions();
+    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(img.as_raw(), w, h);
+    Some(slint::Image::from_rgba8(buf))
+}
+
 fn refresh(app: &App, st: &Rc<RefCell<State>>, host: &Arc<Host>) {
     let snap = host.snapshot();
     let (sch, key) = scheme_for(&snap);
@@ -216,6 +309,7 @@ fn refresh(app: &App, st: &Rc<RefCell<State>>, host: &Arc<Host>) {
     };
     ui.set_detail_text(detail.into());
     ui.set_error_text(snap["error"].as_str().unwrap_or("").into());
+    ui.set_setup_busy(snap["cores"]["busy"].as_str().unwrap_or("").into());
     ui.set_ping_busy(snap["pings"].as_object().map(|m| m.values().any(|p| p["busy"].as_bool().unwrap_or(false))).unwrap_or(false));
     ui.set_check_busy(snap["services"]["checking"].as_bool().unwrap_or(false));
     ui.set_rows(ModelRc::new(VecModel::from(build_rows(&snap, &sch))));
@@ -462,19 +556,154 @@ pub fn run(host: Arc<Host>, tray_ready: bool) -> Result<(), String> {
             });
         }
     });
-    {
+    load_device(&host, &weak);
+    ui.on_hwid_defaults({
         let h = host.clone();
         let weak = weak.clone();
-        std::thread::spawn(move || {
-            let r = h.act("hwid", &Value::Null);
-            let id = r["hwid"].as_str().unwrap_or("").to_string();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(a) = weak.upgrade() {
-                    a.global::<Ui>().set_hwid(id.into());
-                }
+        move || {
+            let h = h.clone();
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                h.act("hwidDefaults", &Value::Null);
+                load_device(&h, &weak);
+                toast(&weak, "Значения устройства сброшены");
             });
-        });
-    }
+        }
+    });
+    ui.on_hwid_save({
+        let h = host.clone();
+        let weak = weak.clone();
+        move |os, ver, model| {
+            let h = h.clone();
+            let weak = weak.clone();
+            let payload = json!({"os": os.to_string(), "ver": ver.to_string(), "model": model.to_string()});
+            std::thread::spawn(move || {
+                h.act("hwidSet", &payload);
+                toast(&weak, "Сохранено");
+            });
+        }
+    });
+    ui.on_copy({
+        let h = host.clone();
+        let weak = weak.clone();
+        move |t| {
+            let h = h.clone();
+            let weak = weak.clone();
+            let t = t.to_string();
+            std::thread::spawn(move || {
+                h.act("copy", &json!(t));
+                toast(&weak, "Скопировано");
+            });
+        }
+    });
+    ui.on_version_tap({
+        let weak = weak.clone();
+        let taps: Rc<RefCell<Vec<Instant>>> = Rc::new(RefCell::new(Vec::new()));
+        move || {
+            let now = Instant::now();
+            let mut t = taps.borrow_mut();
+            t.push(now);
+            t.retain(|x| now.duration_since(*x) <= Duration::from_secs(5));
+            if t.len() >= 3 {
+                t.clear();
+                if let Some(a) = weak.upgrade() {
+                    let ui = a.global::<Ui>();
+                    match load_egg() {
+                        Some(img) => {
+                            ui.set_egg_image(img);
+                            ui.set_egg_has(true);
+                        }
+                        None => ui.set_egg_has(false),
+                    }
+                    ui.set_egg(true);
+                }
+            }
+        }
+    });
+    ui.on_pass_submit(|pw| {
+        #[cfg(unix)]
+        crate::elevate::answer(Some(pw.to_string()));
+        #[cfg(not(unix))]
+        let _ = pw;
+    });
+    ui.on_pass_cancel(|| {
+        #[cfg(unix)]
+        crate::elevate::answer(None);
+    });
+    ui.on_comps_load({
+        let h = host.clone();
+        let weak = weak.clone();
+        move || load_comps(&h, &weak)
+    });
+    ui.on_comp_pick({
+        let weak = weak.clone();
+        move |i, j| {
+            if let Some(a) = weak.upgrade() {
+                let ui = a.global::<Ui>();
+                let model = ui.get_comps();
+                if let Some(mut row) = model.row_data(i as usize) {
+                    let n = row.versions.row_count() as i32;
+                    row.sel = if n == 0 { -1 } else if j < -1 { n - 1 } else if j >= n { -1 } else { j };
+                    model.set_row_data(i as usize, row);
+                }
+            }
+        }
+    });
+    ui.on_comps_install({
+        let h = host.clone();
+        let weak = weak.clone();
+        move || {
+            let Some(a) = weak.upgrade() else { return };
+            let model = a.global::<Ui>().get_comps();
+            let mut picks = serde_json::Map::new();
+            for i in 0..model.row_count() {
+                if let Some(c) = model.row_data(i) {
+                    if c.sel >= 0 {
+                        if let Some(v) = c.versions.row_data(c.sel as usize) {
+                            picks.insert(c.key.to_string(), json!(v.to_string()));
+                        }
+                    }
+                }
+            }
+            if picks.is_empty() {
+                toast(&weak, "Ничего не выбрано");
+                return;
+            }
+            a.global::<Ui>().set_setup_busy("Подготовка…".into());
+            let h = h.clone();
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let r = h.act("componentsInstall", &Value::Object(picks));
+                let errs: Vec<String> = r["errors"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+                let done = errs.is_empty();
+                let w = weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(a) = w.upgrade() {
+                        let ui = a.global::<Ui>();
+                        ui.set_setup_busy("".into());
+                        if done && ui.get_setup_first() {
+                            ui.set_page("home".into());
+                        }
+                    }
+                });
+                toast(&weak, &if done { "Готово".to_string() } else { errs.join("; ") });
+                load_comps(&h, &weak);
+            });
+        }
+    });
+    ui.on_setup_skip({
+        let h = host.clone();
+        let weak = weak.clone();
+        move || {
+            let h = h.clone();
+            std::thread::spawn(move || {
+                h.act("setupDone", &Value::Null);
+            });
+            if let Some(a) = weak.upgrade() {
+                a.global::<Ui>().set_page("home".into());
+            }
+        }
+    });
     ui.on_open_link({
         let h = host.clone();
         move |u| {
@@ -549,6 +778,40 @@ pub fn run(host: Arc<Host>, tray_ready: bool) -> Result<(), String> {
         });
     }
 
+    let watch = Timer::default();
+    {
+        let weak = weak.clone();
+        let st = st.clone();
+        let host = host.clone();
+        let mut ticks = 0u32;
+        watch.start(TimerMode::Repeated, Duration::from_millis(250), move || {
+            ticks += 1;
+            if let Some(a) = weak.upgrade() {
+                #[cfg(unix)]
+                {
+                    let ask = crate::elevate::pending();
+                    let ui = a.global::<Ui>();
+                    if ui.get_ask_pass() != ask.is_some() {
+                        ui.set_ask_pass(ask.is_some());
+                        if ask.is_some() && !a.window().is_visible() {
+                            let _ = a.show();
+                        }
+                    }
+                    ui.set_ask_wrong(ask.unwrap_or(false));
+                }
+                if ticks % 16 == 0 && a.window().is_visible() {
+                    refresh(&a, &st, &host);
+                }
+            }
+        });
+    }
+    if st.borrow().snap["setup"]["needed"].as_bool().unwrap_or(false) {
+        let ui = app.global::<Ui>();
+        ui.set_setup_first(true);
+        ui.set_page("setup".into());
+        load_comps(&host, &weak);
+    }
+
     app.window().on_close_requested({
         let host = host.clone();
         move || {
@@ -594,6 +857,7 @@ pub fn run(host: Arc<Host>, tray_ready: bool) -> Result<(), String> {
     slint::run_event_loop_until_quit().map_err(|e| e.to_string())?;
     anim.stop();
     clock.stop();
+    watch.stop();
     Ok(())
 }
 
@@ -627,6 +891,22 @@ pub fn screenshot(host: Arc<Host>, path: &str, page: &str, sheet: &str, w: u32, 
     app.global::<Ui>().set_hwid("0123456789abcdef".into());
     refresh(&app, &st, &host);
     frame(&app, &st);
+    if page == "setup" {
+        let mk = |key: &str, name: &str, inst: &str, v: &[&str], sel: i32| Comp {
+            key: key.into(),
+            name: name.into(),
+            installed: inst.into(),
+            versions: ModelRc::new(VecModel::from(v.iter().map(|x| SharedString::from(*x)).collect::<Vec<_>>())),
+            sel,
+            note: "".into(),
+        };
+        app.global::<Ui>().set_comps(ModelRc::new(VecModel::from(vec![
+            mk("xray", "Xray", "", &["v26.10.31", "v26.9.20"], 0),
+            mk("singbox", "sing-box", "1.12.4", &["1.13.0", "1.12.4"], -1),
+            mk("awg", "AmneziaWG", "", &["последняя"], 0),
+        ])));
+        app.global::<Ui>().set_setup_first(true);
+    }
     app.global::<Ui>().set_page(page.into());
     app.global::<Ui>().set_sheet(sheet.into());
     app.show().map_err(|e| e.to_string())?;

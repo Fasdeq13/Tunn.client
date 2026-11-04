@@ -1,1 +1,1 @@
-3.8: much faster services check (parallel, ping-aware), hidden picture in About.
+3.8: fixed 'connected' without a VPN icon (state follows the system), faster and more reliable services check, hidden picture in About.

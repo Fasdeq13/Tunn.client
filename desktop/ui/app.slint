@@ -1,6 +1,6 @@
 import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
-import { Pal, Row, Icon, Label, Chip, RoundBtn, SwitchRow, ChoiceRow, CategoryRow } from "base.slint";
-export { Pal, Row }
+import { Pal, Row, Comp, Icon, Label, Chip, RoundBtn, SwitchRow, ChoiceRow, CategoryRow } from "base.slint";
+export { Pal, Row, Comp }
 
 export global Ui {
     in property <string> status: "Off";
@@ -15,7 +15,19 @@ export global Ui {
     in property <float> burst;
     in property <bool> ping-busy;
     in property <bool> check-busy;
-    in property <string> hwid: "";
+    in-out property <string> hwid: "";
+    in-out property <string> hw-os: "";
+    in-out property <string> hw-ver: "";
+    in-out property <string> hw-model: "";
+    in property <bool> ask-pass;
+    in property <bool> ask-wrong;
+    in-out property <bool> egg;
+    in property <bool> egg-has;
+    in property <image> egg-image;
+    in property <[Comp]> comps;
+    in property <string> setup-busy;
+    in property <bool> setup-loading;
+    in-out property <bool> setup-first;
     in property <string> version: "3.8";
     in property <int> theme;
     in property <bool> dynamic;
@@ -54,6 +66,16 @@ export global Ui {
     callback set-int(string, int);
     callback set-str(string, string);
     callback hwid-reset();
+    callback hwid-defaults();
+    callback hwid-save(string, string, string);
+    callback copy(string);
+    callback version-tap();
+    callback pass-submit(string);
+    callback pass-cancel();
+    callback comp-pick(int, int);
+    callback comps-install();
+    callback comps-load();
+    callback setup-skip();
     callback open-link(string);
     callback quit();
 }
@@ -306,17 +328,20 @@ component SubPage inherits Rectangle {
     VerticalLayout {
         HorizontalLayout {
             padding: 8px;
-            padding-left: Ui.wide && root.title != "Настройки" ? 24px : 8px;
+            padding-left: Ui.wide && root.title != "Настройки" ? 16px : 8px;
             padding-right: 16px;
             spacing: 4px;
+            height: 64px;
             if !Ui.wide || root.title == "Настройки": Rectangle {
                 width: 48px; height: 48px;
-                TouchArea { clicked => { Ui.page = (root.title == "Настройки") ? "home" : "settings"; } }
+                TouchArea { clicked => { Ui.page = (root.title == "Настройки" || (root.title == "Компоненты" && Ui.setup-first)) ? "home" : "settings"; } }
                 Icon { source: @image-url("icons/back.svg"); width: 24px; height: 24px; }
             }
             Label { text: root.title; font-size: 22px; font-weight: 700; vertical-alignment: center; }
         }
         ScrollView {
+            content-width: self.width;
+            horizontal-scrollbar-policy: always-off;
             VerticalLayout {
                 alignment: start;
                 padding-bottom: 24px;
@@ -343,7 +368,8 @@ component Settings inherits Rectangle {
         CategoryRow { icon: @image-url("icons/palette.svg"); title: "Оформление"; sub: "Тема, цвет акцента"; clicked => { Ui.page = "look"; } }
         CategoryRow { icon: @image-url("icons/dns.svg"); title: "Подключение"; sub: "DNS, режим TUN, автозапуск"; clicked => { Ui.page = "connect"; } }
         CategoryRow { icon: @image-url("icons/bolt.svg"); title: "Пинг и сервисы"; sub: "Способ проверки, автопроверка"; clicked => { Ui.page = "ping"; } }
-        CategoryRow { icon: @image-url("icons/person.svg"); title: "Подписки"; sub: "HWID"; clicked => { Ui.page = "subs"; } }
+        CategoryRow { icon: @image-url("icons/person.svg"); title: "Подписки"; sub: "HWID, данные устройства"; clicked => { Ui.page = "subs"; } }
+        CategoryRow { icon: @image-url("icons/dns.svg"); title: "Компоненты"; sub: "Xray, sing-box, AmneziaWG"; clicked => { Ui.setup-first = false; Ui.page = "setup"; Ui.comps-load(); } }
         CategoryRow { icon: @image-url("icons/info.svg"); title: "О приложении"; sub: "Tunn " + Ui.version + ", создатель fasdeq13"; clicked => { Ui.page = "about"; } }
     }
 }
@@ -359,22 +385,19 @@ component LookPage inherits SubPage {
     Section {
         title: "Цвет акцента";
         Rectangle {
-            height: 60px;
+            property <int> cols: Math.max(1, Math.floor((self.width - 24px) / 52px));
+            property <int> rows: Math.ceil(Ui.swatches.length / self.cols);
+            height: self.rows * 52px + 16px;
             opacity: Ui.dynamic ? 0.4 : 1;
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                spacing: 10px;
-                alignment: start;
-                for c[i] in Ui.swatches: Rectangle {
-                    width: 40px; height: 40px;
-                    y: 10px;
-                    border-radius: 20px;
-                    background: c;
-                    border-width: Ui.swatch-hex[i].to-lowercase() == Ui.accent.to-lowercase() ? 3px : 0px;
-                    border-color: Pal.on-surface;
-                    TouchArea { clicked => { Ui.set-str("accentHex", Ui.swatch-hex[i]); Ui.set-bool("dynamic", false); } }
-                }
+            for c[i] in Ui.swatches: Rectangle {
+                x: 16px + Math.mod(i, parent.cols) * 52px;
+                y: 8px + Math.floor(i / parent.cols) * 52px;
+                width: 40px; height: 40px;
+                border-radius: 20px;
+                background: c;
+                border-width: Ui.swatch-hex[i].to-lowercase() == Ui.accent.to-lowercase() ? 3px : 0px;
+                border-color: Pal.on-surface;
+                TouchArea { clicked => { Ui.set-str("accentHex", Ui.swatch-hex[i]); Ui.set-bool("dynamic", false); } }
             }
         }
     }
@@ -410,10 +433,62 @@ component PingPage inherits SubPage {
     }
 }
 
+component Field inherits Rectangle {
+    in property <string> label;
+    in-out property <string> text;
+    height: 76px;
+    Label { x: 16px; y: 2px; text: root.label; font-size: 12px; color: Pal.on-variant; }
+    Rectangle {
+        x: 16px; y: 22px;
+        width: parent.width - 32px; height: 48px;
+        border-radius: 16px;
+        background: Pal.container-highest;
+        TextInput {
+            x: 14px; width: parent.width - 28px; height: parent.height;
+            text <=> root.text;
+            color: Pal.on-surface;
+            font-size: 15px;
+            single-line: true;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked;
+    height: 40px;
+    border-radius: 20px;
+    background: root.primary ? Pal.primary : Pal.secondary-container;
+    TouchArea { clicked => { root.clicked(); } }
+    Label {
+        text: root.text;
+        color: root.primary ? Pal.on-primary : Pal.on-secondary-container;
+        horizontal-alignment: center; vertical-alignment: center;
+        font-size: 14px; font-weight: 500;
+    }
+}
+
+component InfoRow inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    callback clicked;
+    height: root.sub == "" ? 52px : 66px;
+    TouchArea { clicked => { root.clicked(); } }
+    VerticalLayout {
+        alignment: center;
+        padding-left: 16px;
+        padding-right: 16px;
+        Label { text: root.title; font-size: 16px; }
+        if root.sub != "": Label { text: root.sub; font-size: 13px; color: Pal.on-variant; }
+    }
+}
+
 component SubsPage inherits SubPage {
     title: "Подписки";
     Section {
-        title: "HWID";
+        title: "HWID и устройство";
         Rectangle {
             height: 64px;
             Rectangle {
@@ -424,13 +499,31 @@ component SubsPage inherits SubPage {
             }
         }
         Rectangle {
+            height: 56px;
+            Label {
+                x: 16px; width: parent.width - 32px;
+                text: "Отправляется провайдеру при загрузке подписки. После сброса HWID подписку может понадобиться привязать к устройству заново.";
+                font-size: 12px; color: Pal.on-variant; wrap: word-wrap; overflow: clip;
+                vertical-alignment: top;
+            }
+        }
+        Field { label: "Операционная система"; text <=> Ui.hw-os; }
+        Field { label: "Версия ОС"; text <=> Ui.hw-ver; }
+        Field { label: "Имя устройства"; text <=> Ui.hw-model; }
+        Rectangle {
             height: 52px;
-            Rectangle {
-                x: 16px; width: 168px; height: 40px;
-                border-radius: 20px;
-                background: Pal.secondary-container;
-                TouchArea { clicked => { Ui.hwid-reset(); } }
-                Label { text: "Сбросить HWID"; color: Pal.on-secondary-container; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; font-weight: 500; }
+            HorizontalLayout {
+                padding-left: 16px; padding-right: 16px; spacing: 10px;
+                Pill { text: "По умолчанию"; clicked => { Ui.hwid-defaults(); } }
+                Pill { text: "Сбросить HWID"; clicked => { Ui.hwid-reset(); } }
+            }
+        }
+        Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 16px; padding-right: 16px; spacing: 10px;
+                Pill { text: "Копировать"; clicked => { Ui.copy(Ui.hwid); } }
+                Pill { text: "Сохранить"; primary: true; clicked => { Ui.hwid-save(Ui.hw-os, Ui.hw-ver, Ui.hw-model); } }
             }
         }
     }
@@ -440,9 +533,79 @@ component AboutPage inherits SubPage {
     title: "О приложении";
     Section {
         title: "Tunn";
+        InfoRow { title: "Tunn"; sub: "Версия " + Ui.version + " · создатель fasdeq13"; clicked => { Ui.version-tap(); } }
+    }
+    Section {
+        title: "Участники";
+        InfoRow { title: "Fasdeq13"; sub: "Создатель"; clicked => { Ui.open-link("https://github.com/Fasdeq13/FasdeqVPN"); } }
+        InfoRow { title: "montik"; }
+        InfoRow { title: "utowike"; }
+    }
+    Section {
+        title: "Официальный канал";
+        InfoRow { title: "Tunn в Telegram"; sub: "t.me/Tunn_client"; clicked => { Ui.open-link("https://t.me/Tunn_client"); } }
+    }
+}
+
+component SetupPage inherits SubPage {
+    title: "Компоненты";
+    Rectangle {
+        height: 64px;
+        Label {
+            x: 16px; width: parent.width - 32px;
+            text: "Tunn скачивает ядра в свою папку, в систему ничего не ставится. Выберите версии и нажмите «Скачать».";
+            font-size: 13px; color: Pal.on-variant; wrap: word-wrap; overflow: clip; vertical-alignment: top;
+        }
+    }
+    if Ui.setup-loading: Rectangle {
+        height: 56px;
+        Label { x: 16px; text: "Загружаю список версий…"; color: Pal.on-variant; vertical-alignment: center; }
+    }
+    for c[i] in Ui.comps: Rectangle {
+        height: 132px;
         Rectangle {
-            height: 60px;
-            Label { x: 16px; text: "Версия " + Ui.version + " · создатель fasdeq13"; vertical-alignment: center; }
+            x: 16px; y: 4px; width: parent.width - 32px; height: 124px;
+            border-radius: 24px;
+            background: Pal.container;
+            Label { x: 18px; y: 12px; width: parent.width - 36px; text: c.name; font-size: 17px; font-weight: 500; }
+            Label {
+                x: 18px; y: 38px; width: parent.width - 36px;
+                text: c.installed == "" ? "Не установлен" : "Установлен: " + c.installed;
+                font-size: 13px;
+                color: c.installed == "" ? Pal.error : Pal.on-variant;
+            }
+            Rectangle {
+                x: 14px; y: 68px; width: 44px; height: 40px; border-radius: 20px; background: Pal.secondary-container;
+                TouchArea { clicked => { Ui.comp-pick(i, c.sel - 1); } }
+                Label { text: "‹"; font-size: 22px; color: Pal.on-secondary-container; horizontal-alignment: center; vertical-alignment: center; }
+            }
+            Rectangle {
+                x: 64px; y: 68px; width: parent.width - 128px; height: 40px; border-radius: 20px;
+                background: c.sel >= 0 ? Pal.primary-container : transparent;
+                border-width: c.sel >= 0 ? 0px : 1px; border-color: Pal.outline;
+                Label {
+                    text: c.sel >= 0 ? c.versions[c.sel] : (c.note != "" ? "Нет сети" : "Не скачивать");
+                    color: Pal.on-primary-container; font-size: 14px; font-weight: 500;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                x: parent.width - 58px; y: 68px; width: 44px; height: 40px; border-radius: 20px; background: Pal.secondary-container;
+                TouchArea { clicked => { Ui.comp-pick(i, c.sel + 1); } }
+                Label { text: "›"; font-size: 22px; color: Pal.on-secondary-container; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+    }
+    Rectangle {
+        height: 64px;
+        Label { x: 16px; width: parent.width - 32px; text: Ui.setup-busy; color: Pal.primary; font-size: 14px; vertical-alignment: center; }
+    }
+    Rectangle {
+        height: 56px;
+        HorizontalLayout {
+            padding-left: 16px; padding-right: 16px; spacing: 10px;
+            if Ui.setup-first: Pill { text: "Пропустить"; clicked => { Ui.setup-skip(); } }
+            Pill { text: Ui.setup-busy != "" ? "Скачиваю…" : "Скачать"; primary: true; clicked => { if Ui.setup-busy == "" { Ui.comps-install(); } } }
         }
     }
 }
@@ -509,6 +672,7 @@ export component App inherits Window {
             PingPage { x: Ui.page == "ping" ? 0px : parent.width; opacity: Ui.page == "ping" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
             SubsPage { x: Ui.page == "subs" ? 0px : parent.width; opacity: Ui.page == "subs" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
             AboutPage { x: Ui.page == "about" ? 0px : parent.width; opacity: Ui.page == "about" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
+            SetupPage { x: Ui.page == "setup" ? 0px : parent.width; opacity: Ui.page == "setup" ? 1 : 0; animate x, opacity { duration: 300ms; easing: ease-in-out; } }
         }
 
         if Ui.sheet == "add": Sheet {
@@ -550,6 +714,60 @@ export component App inherits Window {
             ActionRow { text: "Сохранить название"; clicked => { Ui.rename(Ui.sheet-id, renin.text); Ui.sheet = ""; } }
             ActionRow { text: "Проверить пинг"; clicked => { Ui.ping-one(Ui.sheet-id); Ui.sheet = ""; } }
             ActionRow { text: "Удалить"; danger: true; clicked => { Ui.remove(Ui.sheet-id); Ui.sheet = ""; } }
+        }
+        if Ui.ask-pass: Rectangle {
+            background: #000000b0;
+            TouchArea {}
+            Rectangle {
+                width: min(parent.width - 32px, 400px);
+                height: 270px;
+                x: (parent.width - self.width) / 2;
+                y: max(16px, (parent.height - self.height) / 3);
+                border-radius: 28px;
+                background: Pal.container-high;
+                VerticalLayout {
+                    padding: 22px;
+                    spacing: 10px;
+                    Label { text: "Нужны права администратора"; font-size: 19px; font-weight: 700; }
+                    Label { text: "Пароль нужен один раз для запуска TUN / WireGuard. Он хранится только в памяти и не сохраняется."; font-size: 13px; color: Pal.on-variant; wrap: word-wrap; overflow: clip; height: 52px; }
+                    Rectangle {
+                        height: 48px;
+                        border-radius: 16px;
+                        background: Pal.container-highest;
+                        border-width: Ui.ask-wrong ? 2px : 0px;
+                        border-color: Pal.error;
+                        passin := TextInput {
+                            x: 14px; width: parent.width - 28px; height: parent.height;
+                            input-type: password;
+                            color: Pal.on-surface;
+                            font-size: 15px;
+                            single-line: true;
+                            vertical-alignment: center;
+                            init => { self.focus(); }
+                            accepted => { Ui.pass-submit(self.text); self.text = ""; }
+                        }
+                    }
+                    Label { text: Ui.ask-wrong ? "Неверный пароль, попробуйте ещё раз" : ""; font-size: 13px; color: Pal.error; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: end;
+                        Pill { width: 110px; text: "Отмена"; clicked => { Ui.pass-cancel(); passin.text = ""; } }
+                        Pill { width: 110px; text: "Войти"; primary: true; clicked => { Ui.pass-submit(passin.text); passin.text = ""; } }
+                    }
+                }
+            }
+        }
+        if Ui.egg: Rectangle {
+            background: #000000;
+            if Ui.egg-has: Image { source: Ui.egg-image; image-fit: fill; width: parent.width; height: parent.height; }
+            if !Ui.egg-has: Label { x: 24px; width: parent.width - 48px; text: "Положите icon.png, icon.jpg или icon.jpeg в корень проекта и пересоберите. Esc закрывает."; color: #ffffff; wrap: word-wrap; overflow: clip; vertical-alignment: center; horizontal-alignment: center; }
+            FocusScope {
+                init => { self.focus(); }
+                key-pressed(e) => {
+                    if (e.text == Key.Escape) { Ui.egg = false; return accept; }
+                    return reject;
+                }
+            }
         }
         if Ui.toast != "": Rectangle {
             y: parent.height - 84px;

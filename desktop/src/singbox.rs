@@ -387,20 +387,55 @@ fn unpack(raw: &[u8], is_zip: bool, dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn download_latest() -> Result<PathBuf, String> {
+pub struct SbRelease {
+    pub tag: String,
+    pub url: String,
+}
+
+pub fn releases() -> Result<Vec<SbRelease>, String> {
     let (os, arch, zip) = platform()?;
-    let raw = http("https://api.github.com/repos/SagerNet/sing-box/releases/latest", 8 * 1024 * 1024)?;
-    let rel: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
+    let raw = http("https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20", 8 * 1024 * 1024)?;
+    let arr: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
     let suffix = format!("-{}-{}.{}", os, arch, if zip { "zip" } else { "tar.gz" });
-    let url = rel["assets"]
-        .as_array()
-        .and_then(|a| a.iter().find(|x| x["name"].as_str().map(|n| n.ends_with(&suffix)).unwrap_or(false)))
-        .and_then(|x| x["browser_download_url"].as_str())
-        .ok_or("Не нашёл сборку sing-box для этой системы")?
-        .to_string();
-    let data = http(&url, 200 * 1024 * 1024)?;
+    let mut out = Vec::new();
+    for r in arr.as_array().cloned().unwrap_or_default() {
+        if r["prerelease"].as_bool().unwrap_or(false) || r["draft"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let url = r["assets"]
+            .as_array()
+            .and_then(|a| a.iter().find(|x| x["name"].as_str().map(|n| n.ends_with(&suffix) && !n.contains("legacy") && !n.contains("glibc")).unwrap_or(false)))
+            .and_then(|x| x["browser_download_url"].as_str())
+            .map(String::from);
+        if let Some(url) = url {
+            out.push(SbRelease { tag: r["tag_name"].as_str().unwrap_or("").to_string(), url });
+        }
+    }
+    if out.is_empty() {
+        return Err("Не нашёл сборку sing-box для этой системы".into());
+    }
+    Ok(out)
+}
+
+pub fn install_release(rel: &SbRelease) -> Result<PathBuf, String> {
+    let (_, _, zip) = platform()?;
+    let data = http(&rel.url, 200 * 1024 * 1024)?;
     unpack(&data, zip, &core_dir())?;
+    let _ = std::fs::write(core_dir().join("version.txt"), rel.tag.trim_start_matches('v'));
     find_binary().ok_or_else(|| "sing-box не найден после загрузки".to_string())
+}
+
+pub fn download_latest() -> Result<PathBuf, String> {
+    let list = releases()?;
+    install_release(list.first().ok_or("Нет доступных версий sing-box")?)
+}
+
+pub fn installed_version() -> Option<String> {
+    let own = core_dir().join(exe());
+    if !own.is_file() {
+        return None;
+    }
+    Some(std::fs::read_to_string(core_dir().join("version.txt")).map(|v| v.trim().to_string()).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "установлен".into()))
 }
 
 #[cfg(target_os = "linux")]
@@ -460,25 +495,26 @@ fn wait_ready(proc: &mut Proc, log: &Path, port: u16, secs: u64, need_tun: bool)
 
 #[cfg(target_os = "linux")]
 pub fn start_tun(bin: &Path, config: &Value, port: u16) -> Result<Proc, String> {
-    let Some(pkexec) = crate::xray::which("pkexec") else {
-        return Err("Для TUN нужен pkexec (polkit). Установите polkit или выберите режим «Системный прокси»".into());
-    };
+    if !crate::elevate::available() {
+        return Err("Для TUN нужен sudo или pkexec. Установите один из них или выберите режим «Системный прокси»".into());
+    }
     if !Path::new("/dev/net/tun").exists() {
         return Err("Нет /dev/net/tun. Загрузите модуль: sudo modprobe tun".into());
     }
+    let way = crate::elevate::prepare()?;
     let path = data_dir().join(format!("run-{}.json", port));
     std::fs::write(&path, config.to_string()).map_err(|e| e.to_string())?;
     let stop = data_dir().join("tun.stop");
     let _ = std::fs::remove_file(&stop);
     let log = log_path();
     let lf = std::fs::File::create(&log).ok();
-    let mut cmd = Command::new(pkexec);
+    let mut cmd = crate::elevate::base(&way);
     cmd.arg("/bin/sh").arg("-c").arg(TUN_SCRIPT).arg("tunn").arg(bin).arg(&path).arg(&stop)
         .arg(std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(match lf.as_ref().and_then(|f| f.try_clone().ok()) { Some(f) => Stdio::from(f), None => Stdio::null() })
         .stderr(match lf { Some(f) => Stdio::from(f), None => Stdio::null() });
-    let child = cmd.spawn().map_err(|e| format!("Не удалось запустить pkexec: {}", e))?;
+    let child = crate::elevate::spawn(&way, cmd)?;
     let mut proc = Proc::new(child, path, Some(stop));
     let end = Instant::now() + Duration::from_secs(120);
     loop {
@@ -487,8 +523,7 @@ pub fn start_tun(bin: &Path, config: &Value, port: u16) -> Result<Proc, String> 
             let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
             proc.forget_stop();
             let msg = match status.code() {
-                Some(126) => "Доступ отклонён или пароль не введён".to_string(),
-                Some(127) => "Не найден polkit-агент для запроса пароля. Запустите hyprpolkitagent или polkit-gnome, либо выберите режим «Системный прокси»".to_string(),
+                Some(126) | Some(127) => crate::elevate::hint(status.code(), &last),
                 _ => if last.is_empty() { "TUN не запустился".to_string() } else { last },
             };
             return Err(msg);

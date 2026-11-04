@@ -1,6 +1,8 @@
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 mod conflict;
+#[cfg(unix)]
+mod elevate;
 mod host;
 mod server;
 mod singbox;
