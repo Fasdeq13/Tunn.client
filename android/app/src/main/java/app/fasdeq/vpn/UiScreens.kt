@@ -150,7 +150,7 @@ fun AppRoot(a: ComposeActivity) {
         val show: (Sheet) -> Unit = { sheet.value = it }
         if (!s.setupDone) SetupDialog(a, s)
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = if (LocalGlass.current.on) Color.Transparent else MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
             snackbarHost = { SnackbarHost(host, Modifier.navigationBarsPadding()) }
         ) { pad ->
@@ -378,9 +378,9 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
     }
     val panelBody: @Composable (Modifier, androidx.compose.ui.graphics.Shape) -> Unit = { panelMod, panelShape ->
     Surface(
-        modifier = panelMod,
+        modifier = panelMod.glass(panelShape),
         shape = panelShape,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        color = if (LocalGlass.current.on) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -506,7 +506,8 @@ private fun ServerRow(a: ComposeActivity, s: Snap, v: SrvUi, modifier: Modifier,
         tween(300), label = "rowbg"
     ).value
     Box(
-        modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(24.dp)).background(bg).combinedClickable(
+        modifier.fillMaxWidth().padding(vertical = if (LocalGlass.current.on) 5.dp else 3.dp).glass(RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
+            .background(if (LocalGlass.current.on) (if (picked) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) else bg).combinedClickable(
             onClick = {
                 a.call("select", v.id) { r ->
                     val e = r.optString("error")
@@ -565,8 +566,8 @@ fun SubPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) 
 @Composable
 fun CategoryRow(icon: Int, title: String, sub: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onClick).padding(16.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (LocalGlass.current.on) 7.dp else 4.dp).glass(RoundedCornerShape(26.dp)).clip(RoundedCornerShape(24.dp))
+            .background(if (LocalGlass.current.on) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer).clickable(onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
@@ -591,7 +592,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.9, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.10, создатели, канал") { go("about") }
     }
 }
 

@@ -128,10 +128,10 @@ fun isDarkFor(theme: Int): Boolean = when (theme) {
 fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
     val ctx = LocalContext.current
     var dark = isDarkFor(s.theme)
-    val bg = if (s.bgOn) parseHex(s.bgHex) else null
+    val bg = if (s.bgOn && !s.glass) parseHex(s.bgHex) else null
     if (bg != null) dark = lum(bg) <= 0.55f
     val custom = parseHex(s.accentHex)
-    val scheme: ColorScheme = if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
+    val scheme: ColorScheme = if (s.glass) glassScheme(dark) else if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
         var d = if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         if (dark && s.amoled) {
             d = d.copy(
@@ -155,6 +155,25 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
             large = RoundedCornerShape(26.dp),
             extraLarge = RoundedCornerShape(34.dp)
         ),
-        content = content
+        content = if (s.glass) ({ GlassHost(s, dark, content) }) else content
+    )
+}
+
+fun glassScheme(dark: Boolean): ColorScheme {
+    val blue = if (dark) Color(0xFF0A84FF) else Color(0xFF007AFF)
+    val fg = if (dark) Color.White else Color(0xFF101114)
+    val soft = if (dark) Color(0xFFEBEBF5).copy(alpha = 0.62f) else Color(0xFF3C3C43).copy(alpha = 0.68f)
+    val glass = { a: Float -> if (dark) Color(0xFF1C1C24).copy(alpha = a) else Color.White.copy(alpha = a) }
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = blue, onPrimary = Color.White,
+        primaryContainer = blue.copy(alpha = 0.30f), onPrimaryContainer = fg,
+        secondary = blue, secondaryContainer = glass(0.30f), onSecondaryContainer = fg,
+        tertiary = blue,
+        background = Color.Transparent, onBackground = fg, surface = Color.Transparent, onSurface = fg,
+        surfaceVariant = glass(0.28f), onSurfaceVariant = soft,
+        surfaceContainer = glass(0.34f), surfaceContainerHigh = glass(if (dark) 0.78f else 0.86f), surfaceContainerHighest = glass(0.42f),
+        outline = soft, outlineVariant = soft.copy(alpha = 0.3f),
+        error = if (dark) Color(0xFFFF453A) else Color(0xFFFF3B30)
     )
 }

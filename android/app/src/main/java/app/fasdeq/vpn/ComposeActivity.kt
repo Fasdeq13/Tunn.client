@@ -125,7 +125,7 @@ class ComposeActivity : BaseUiActivity() {
         return listOf(
             s.status, s.selectedId, s.error,
             s.servers.toList(), s.groups.toList(),
-            s.themeMode, s.dynamicColors, s.amoled, s.autoConnect, s.dnsPreset, s.dnsCustom, s.mtu,
+            s.themeMode, s.dynamicColors, s.amoled, s.glass, s.glassLevel, s.glassBg, s.autoConnect, s.dnsPreset, s.dnsCustom, s.mtu,
             s.pingMode, s.pingTimeout, s.autoPing, s.sortPing, s.tuning,
             s.cores.toList(), s.sbCores.toList(), s.activeCore, s.coreBusy, s.releases, s.sbReleases, s.autoCheck, s.checkInterval,
             Updates.state.hashCode(), Plugins.busy, Plugins.catalog, Plugins.stamp

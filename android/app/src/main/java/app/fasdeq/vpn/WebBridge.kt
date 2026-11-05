@@ -270,6 +270,24 @@ class WebBridge(private val host: BaseUiActivity) {
                 reply(id)
                 push()
             }
+            "pickGlassBg" -> host.pickImage { uri ->
+                if (uri == null) {
+                    reply(id, JSONObject().put("cancel", true))
+                } else {
+                    host.lifecycleScope.launch {
+                        val error = withContext(Dispatchers.IO) { GlassBg.save(host, uri) }
+                        if (error == null) app.changeGlassBg(System.currentTimeMillis())
+                        reply(id, if (error != null) JSONObject().put("error", error) else JSONObject())
+                        push()
+                    }
+                }
+            }
+            "clearGlassBg" -> {
+                GlassBg.clear(host)
+                app.changeGlassBg(0L)
+                reply(id)
+                push()
+            }
             "pickIcon" -> host.pickImage { uri ->
                 if (uri == null) {
                     reply(id, JSONObject().put("cancel", true))
@@ -439,6 +457,8 @@ class WebBridge(private val host: BaseUiActivity) {
             "theme" -> st.setTheme(int(v))
             "dynamic" -> st.setDynamic(bool(v))
             "amoled" -> st.changeAmoled(bool(v))
+            "glass" -> st.changeGlass(bool(v))
+            "glassLevel" -> st.changeGlassLevel(int(v))
             "autoConnect" -> st.changeAutoConnect(bool(v))
             "dns" -> st.changeDnsPreset(int(v))
             "dnsCustom" -> st.changeDnsCustom(v as? String ?: "")
@@ -627,6 +647,9 @@ class WebBridge(private val host: BaseUiActivity) {
         settings.put("theme", st.themeMode)
         settings.put("dynamic", st.dynamicColors)
         settings.put("amoled", st.amoled)
+        settings.put("glass", st.glass)
+        settings.put("glassLevel", st.glassLevel)
+        settings.put("glassBg", st.glassBg)
         settings.put("autoConnect", st.autoConnect)
         settings.put("dns", st.dnsPreset)
         settings.put("dnsCustom", st.dnsCustom)

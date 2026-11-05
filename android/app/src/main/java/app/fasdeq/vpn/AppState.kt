@@ -101,6 +101,12 @@ class AppState(private val app: Application) {
         private set
     var amoled by mutableStateOf(prefs.getBoolean("amoled", false))
         private set
+    var glass by mutableStateOf(prefs.getBoolean("glass", false))
+        private set
+    var glassLevel by mutableIntStateOf(prefs.getInt("glass_level", 55))
+        private set
+    var glassBg by mutableStateOf(prefs.getLong("glass_bg", 0L))
+        private set
     var pingMode by mutableIntStateOf(prefs.getInt("ping_mode", 0))
         private set
     var pingTimeout by mutableIntStateOf(prefs.getInt("ping_timeout", 1))
@@ -563,6 +569,21 @@ class AppState(private val app: Application) {
     fun changePalette(value: Int) {
         palette = value
         prefs.edit().putInt("palette", value).apply()
+    }
+
+    fun changeGlass(value: Boolean) {
+        glass = value
+        prefs.edit().putBoolean("glass", value).apply()
+    }
+
+    fun changeGlassLevel(value: Int) {
+        glassLevel = value.coerceIn(0, 100)
+        prefs.edit().putInt("glass_level", glassLevel).apply()
+    }
+
+    fun changeGlassBg(stamp: Long) {
+        glassBg = stamp
+        prefs.edit().putLong("glass_bg", stamp).apply()
     }
 
     fun changeAmoled(value: Boolean) {

@@ -112,12 +112,30 @@ fun HexField(current: String, onValid: (String) -> Unit) {
 @Composable
 fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Оформление", onBack) {
-        Section("Тема") {
+        Section("Стиль") {
+            SwitchRow("Liquid Glass", "Стекло как в iOS 26: размытие, преломление на кромках, блики. На Android 13+ настоящая линза на шейдере, на старых упрощённо. Цвета акцента не меняются", s.glass) { a.set("glass", it) }
+        }
+        if (s.glass) {
+            Section("Стекло") {
+                ChoiceRow("Тема", listOf("Система", "Светлая", "Тёмная"), s.theme) { a.set("theme", it) }
+                SliderRow("Степень стекла", s.glassLevel.toFloat(), 0f, 100f, if (s.glassLevel < 35) "матовое" else if (s.glassLevel < 70) "среднее" else "прозрачное") { a.set("glassLevel", it.toInt()) }
+            }
+            Section("Фон") {
+                BaseRow("Выбрать картинку", "Фото под стеклом. Сейчас: " + (if (s.glassBg != 0L) "своя картинка" else "стандартный фон"), onClick = {
+                    a.call("pickGlassBg") { r ->
+                        val e = r.optString("error")
+                        if (e.isNotEmpty()) a.say(e)
+                    }
+                })
+                if (s.glassBg != 0L) BaseRow("Вернуть стандартный фон", null, onClick = { a.call("clearGlassBg") })
+            }
+        }
+        if (!s.glass) Section("Тема") {
             ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme, enabled = !s.bgOn) { a.set("theme", it) }
             ChoiceRow("Цвета", listOf("Системные", "Свои"), if (s.dynamic) 0 else 1, enabled = !s.bgOn) { a.set("dynamic", it == 0) }
             SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled, enabled = !s.bgOn) { a.set("amoled", it) }
         }
-        Section("Цвет акцента") {
+        if (!s.glass) Section("Цвет акцента") {
             Dim(!s.dynamic || s.bgOn) {
                 Column {
                     SwatchGrid(accents, s.accentHex) {
@@ -131,7 +149,7 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
                 }
             }
         }
-        Section("Фон") {
+        if (!s.glass) Section("Фон") {
             SwitchRow("Свой цвет фона", "Пока включён, тема, системные цвета и чёрный фон неактивны, но их значения сохраняются", s.bgOn) { a.set("bgCustom", it) }
             if (s.bgOn) {
                 SwatchGrid(backgrounds, s.bgHex) { a.set("bgHex", it) }
@@ -302,7 +320,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.9 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 3.10 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }

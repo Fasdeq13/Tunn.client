@@ -49,19 +49,20 @@ import androidx.compose.ui.text.input.ImeAction
 
 @Composable
 fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = if (LocalGlass.current.on) 30.dp else 18.dp)) {
         Text(
             title,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
         )
+        val sh = RoundedCornerShape(if (LocalGlass.current.on) 28.dp else 24.dp)
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+            shape = sh,
+            color = if (LocalGlass.current.on) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass(sh)
         ) {
-            Column(Modifier.padding(vertical = 4.dp), content = content)
+            Column(Modifier.padding(vertical = if (LocalGlass.current.on) 8.dp else 4.dp), content = content)
         }
     }
 }
@@ -81,7 +82,7 @@ fun BaseRow(
         m = m.combinedClickable(enabled = enabled, onClick = { onClick?.invoke() }, onLongClick = onLong)
     }
     Row(
-        m.padding(horizontal = 16.dp, vertical = 12.dp).alpha(if (enabled) 1f else 0.45f),
+        m.padding(horizontal = 18.dp, vertical = if (LocalGlass.current.on) 17.dp else 12.dp).alpha(if (enabled) 1f else 0.45f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leading != null) {
@@ -112,7 +113,8 @@ fun SwitchRow(title: String, sub: String? = null, checked: Boolean, enabled: Boo
         title, sub, enabled = enabled,
         onClick = { onChange(!checked) },
         trailing = {
-            Switch(checked = checked, enabled = enabled, onCheckedChange = {
+            if (LocalGlass.current.on) LiquidSwitch(checked, enabled, onChange)
+            else Switch(checked = checked, enabled = enabled, onCheckedChange = {
                 onChange(it)
             })
         }
@@ -121,6 +123,10 @@ fun SwitchRow(title: String, sub: String? = null, checked: Boolean, enabled: Boo
 
 @Composable
 fun ChoiceRow(title: String, options: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
+    if (LocalGlass.current.on && options.size in 2..4) {
+        LiquidChoice(title, options, selected, enabled, onSelect)
+        return
+    }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).alpha(if (enabled) 1f else 0.45f)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(8.dp))
