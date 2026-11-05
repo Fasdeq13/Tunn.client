@@ -13,12 +13,30 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 29
-        versionName = (project.findProperty("app.vname") as String?) ?: "3.8"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 30
+        versionName = (project.findProperty("app.vname") as String?) ?: "3.9"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    // full: everything inside; min: only the sing-box core, the rest is downloaded in "Components";
+    // netinstall: no cores at all, the first launch asks what to download
+    flavorDimensions += "dist"
+    productFlavors {
+        create("full") {
+            dimension = "dist"
+            buildConfigField("String", "DIST", "\"full\"")
+        }
+        create("min") {
+            dimension = "dist"
+            buildConfigField("String", "DIST", "\"min\"")
+        }
+        create("netinstall") {
+            dimension = "dist"
+            buildConfigField("String", "DIST", "\"netinstall\"")
         }
     }
 
@@ -76,6 +94,16 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
+        }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val jni = variant.packaging.jniLibs.excludes
+        when (variant.flavorName) {
+            "min" -> { jni.add("**/libam-go.so"); jni.add("**/libwg-go.so") }
+            "netinstall" -> { jni.add("**/libsingbox.so"); jni.add("**/libam-go.so"); jni.add("**/libwg-go.so") }
         }
     }
 }

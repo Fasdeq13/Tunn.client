@@ -12,7 +12,6 @@ let
       jdk21
       rustup
       python3
-      # desktop (Slint + winit, tray, xdotool)
       gtk3 glib cairo pango gdk-pixbuf atk libayatana-appindicator xdotool harfbuzz zlib openssl
       # headers + pkg-config files (the "dev" outputs are not linked into the FHS env by default)
       glib.dev gtk3.dev cairo.dev pango.dev gdk-pixbuf.dev atk.dev harfbuzz.dev fontconfig.dev freetype.dev

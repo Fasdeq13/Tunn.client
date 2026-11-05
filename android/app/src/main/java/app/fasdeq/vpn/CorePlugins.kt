@@ -68,9 +68,10 @@ object CorePlugins {
     fun singboxFile(c: Context): File = File(c.applicationInfo.nativeLibraryDir, "libsingbox.so")
 
     fun present(c: Context, id: String): Boolean = when (id) {
-        XRAY -> !deleted(c, XRAY)
-        SINGBOX -> !deleted(c, SINGBOX) && singboxFile(c).exists()
-        TUIC -> !deleted(c, TUIC) && singboxFile(c).exists()
+        XRAY -> !deleted(c, XRAY) && Components.has(c, Components.XRAY)
+        SINGBOX -> !deleted(c, SINGBOX) && Components.has(c, Components.SINGBOX)
+        TUIC -> !deleted(c, TUIC) && Components.has(c, Components.SINGBOX)
+        AWG -> !deleted(c, AWG) && Components.has(c, Components.AWG)
         else -> !deleted(c, id)
     }
 
@@ -119,6 +120,7 @@ object CorePlugins {
         val out = JSONObject()
         val items = JSONArray()
         fun add(id: String, name: String, description: String, core: Boolean) {
+            if (!Components.full && id in setOf(SINGBOX, XRAY, TUIC, AWG) && !present(c, id)) return
             items.put(
                 JSONObject().put("id", id).put("name", name).put("description", description).put("core", core)
                     .put("present", present(c, id)).put("enabled", enabled(c, id) && present(c, id))

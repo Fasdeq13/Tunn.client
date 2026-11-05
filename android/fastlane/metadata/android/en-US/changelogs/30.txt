@@ -1,0 +1,1 @@
+3.9: Components tab, three APK variants (full/min/netinstall), service check results are kept, service check pings first, About picture survives rotation. Desktop version removed.

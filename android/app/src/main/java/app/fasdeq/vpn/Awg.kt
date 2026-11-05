@@ -17,6 +17,16 @@ object Awg {
     fun load() {
         if (loaded) return
         var failure = ""
+        val downloaded = Components.awgFile(FasdeqApp.appContext)
+        if (downloaded.exists()) {
+            try {
+                System.load(downloaded.absolutePath)
+                loaded = true
+                return
+            } catch (e: UnsatisfiedLinkError) {
+                failure = e.message ?: ""
+            }
+        }
         for (name in listOf("am-go", "wg-go")) {
             try {
                 System.loadLibrary(name)

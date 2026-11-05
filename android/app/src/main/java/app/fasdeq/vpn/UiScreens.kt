@@ -148,6 +148,7 @@ fun AppRoot(a: ComposeActivity) {
         val wide = LocalConfiguration.current.screenWidthDp >= 720
         val go: (String) -> Unit = { page.value = it }
         val show: (Sheet) -> Unit = { sheet.value = it }
+        if (!s.setupDone) SetupDialog(a, s)
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
@@ -537,7 +538,7 @@ private fun ServerRow(a: ComposeActivity, s: Snap, v: SrvUi, modifier: Modifier,
                 if (c != null || dead) {
                     Spacer(Modifier.height(5.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (i in 0 until s.serviceNames.size) ServiceIcon(i, if (dead) checkColor(-1, false) else checkColor(c?.ms?.getOrNull(i), c?.busy == true), 14)
+                        for (i in 0 until s.serviceNames.size) ServiceIcon(i, if (dead) checkColor(-4, false) else checkColor(c?.ms?.getOrNull(i), c?.busy == true), 14)
                     }
                 }
             }
@@ -586,10 +587,11 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_palette, "Оформление", "Тема, цвет, фон, иконка") { go("look") }
         CategoryRow(R.drawable.ic_dns, "Подключение", "DNS, MTU, маршрутизация, приложения") { go("connect") }
         CategoryRow(R.drawable.ic_apps, "Плагины и ядра", "sing-box, Xray, WireGuard, свои плагины") { go("plugins") }
+        CategoryRow(R.drawable.ic_apps, "Компоненты", if (s.dist == "full") "sing-box, Xray, AmneziaWG: версии" else "Скачать sing-box, Xray, AmneziaWG") { go("components") }
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.8, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.9, создатели, канал") { go("about") }
     }
 }
 
@@ -599,6 +601,7 @@ fun SettingsPage(a: ComposeActivity, s: Snap, page: String, open: (Sheet) -> Uni
         "look" -> LookPage(a, s, open, onBack)
         "connect" -> ConnectPage(a, s, open, onBack)
         "plugins" -> PluginsPage(a, s, open, onBack)
+        "components" -> ComponentsPage(a, s, open, onBack)
         "ping" -> PingPage(a, s, onBack)
         "subs" -> SubsPage(a, s, open, onBack)
         "updates" -> UpdatesPage(a, s, onBack)

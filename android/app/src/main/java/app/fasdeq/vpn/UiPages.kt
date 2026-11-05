@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -297,10 +299,10 @@ fun UpdatesPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
 fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
     SubPage("О приложении", onBack) {
         val tapTimes = remember { mutableListOf<Long>() }
-        var egg by remember { mutableStateOf(false) }
+        var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.8 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 3.9 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -362,5 +364,130 @@ fun EggPicture(ctx: android.content.Context, onClose: () -> Unit) {
                 Text("Положите icon.png, icon.jpg или icon.jpeg в корень проекта и пересоберите", Modifier.padding(32.dp), color = Color.White)
             }
         }
+    }
+}
+
+
+private fun installChain(a: ComposeActivity, ids: List<String>, i: Int = 0) {
+    if (i >= ids.size) {
+        a.say("Готово")
+        return
+    }
+    a.call("installComponent", ids[i]) { r ->
+        val e = r.optString("error")
+        if (e.isNotEmpty()) a.say(e) else installChain(a, ids, i + 1)
+    }
+}
+
+@Composable
+fun ComponentsPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
+    val busy = s.xrayBusy != null
+    SubPage("Компоненты", onBack) {
+        Text(
+            if (s.dist == "full") "В этой сборке всё уже внутри. Версии ядер можно сменить или докачать."
+            else "Здесь можно скачать то, чего нет в этой сборке. Скачанное сразу появляется в настройках и плагинах, неустановленное скрыто.",
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Box(Modifier.padding(horizontal = 16.dp)) { BusyLine(s.xrayBusy) }
+        Section("Ядра") {
+            ComponentRow(
+                "sing-box", "Обязательное ядро, рекомендуется. VLESS, VMess, Trojan, Shadowsocks, TUIC.",
+                s.hasSb, s.dist == "full", busy,
+                onInstall = { a.say("Скачиваю sing-box…"); installChain(a, listOf("singbox")) },
+                onRemove = { a.call("removeComponent", "singbox") },
+                onVersions = { open(Sheet.SbCores) }
+            )
+            ComponentRow(
+                "Xray", "Не обязателен, но рекомендуется: берёт то, чего не умеет sing-box (например XHTTP). Можно поставить только его.",
+                s.hasXray, s.dist == "full", busy,
+                onInstall = { a.say("Скачиваю Xray…"); installChain(a, listOf("xray")) },
+                onRemove = { a.call("removeComponent", "xray") },
+                onVersions = { open(Sheet.XrayCores) }
+            )
+        }
+        Section("Протоколы") {
+            BaseRow("WireGuard", "Встроен во все сборки, ничего скачивать не нужно")
+            ComponentRow(
+                "AmneziaWG", "Библиотека для AmneziaWG-конфигов (обфусцированный WireGuard).",
+                s.hasAwg, s.dist == "full", busy,
+                onInstall = { a.say("Скачиваю AmneziaWG…"); installChain(a, listOf("awg")) },
+                onRemove = { a.call("removeComponent", "awg") },
+                onVersions = null
+            )
+        }
+        if (s.dist != "full") {
+            val missing = buildList {
+                if (!s.hasSb) add("singbox")
+                if (!s.hasXray) add("xray")
+                if (!s.hasAwg) add("awg")
+            }
+            if (missing.isNotEmpty()) {
+                Button(
+                    { a.say("Скачиваю…"); installChain(a, missing) },
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).height(52.dp),
+                    enabled = !busy
+                ) { Text("Скачать всё недостающее") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComponentRow(
+    title: String, sub: String, installed: Boolean, bundled: Boolean, busy: Boolean,
+    onInstall: () -> Unit, onRemove: () -> Unit, onVersions: (() -> Unit)?
+) {
+    BaseRow(
+        title,
+        sub + if (installed) (if (bundled) " · в комплекте" else " · установлено") else " · не установлено",
+        onClick = if (installed && onVersions != null) onVersions else null,
+        trailing = {
+            if (!installed) {
+                FilledTonalButton(onInstall, enabled = !busy) { Text("Скачать") }
+            } else if (!bundled) {
+                TextButton(onRemove, enabled = !busy) { Text("Удалить") }
+            }
+        }
+    )
+}
+
+@Composable
+fun SetupDialog(a: ComposeActivity, s: Snap) {
+    var sb by remember { mutableStateOf(true) }
+    var xr by remember { mutableStateOf(true) }
+    var awg by remember { mutableStateOf(false) }
+    val busy = s.xrayBusy != null
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Что скачать?") },
+        text = {
+            Column {
+                Text("В этой сборке нет ядер, их нужно скачать. Позже это можно сделать в Настройки → Компоненты.", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                BusyLine(s.xrayBusy)
+                SetupCheck("sing-box · обязательное, рекомендуется", sb) { sb = it }
+                SetupCheck("Xray · рекомендуется", xr) { xr = it }
+                SetupCheck("AmneziaWG", awg) { awg = it }
+            }
+        },
+        confirmButton = {
+            Button({
+                val ids = buildList { if (sb) add("singbox"); if (xr) add("xray"); if (awg) add("awg") }
+                a.call("setupDone")
+                if (ids.isNotEmpty()) { a.say("Скачиваю…"); installChain(a, ids) }
+            }, enabled = !busy) { Text("Скачать выбранное") }
+        },
+        dismissButton = {
+            TextButton({ a.call("setupDone") }, enabled = !busy) { Text("Позже") }
+        }
+    )
+}
+
+@Composable
+private fun SetupCheck(text: String, value: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Checkbox(value, onChange)
+        Text(text, style = MaterialTheme.typography.bodyLarge)
     }
 }

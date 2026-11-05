@@ -187,6 +187,21 @@ class WebBridge(private val host: BaseUiActivity) {
                 reply(id, if (error != null) JSONObject().put("error", error) else JSONObject())
                 push()
             }
+            "installComponent" -> host.lifecycleScope.launch {
+                val error = app.installComponent(text)
+                reply(id, if (error != null) JSONObject().put("error", error) else JSONObject())
+                push()
+            }
+            "removeComponent" -> {
+                app.removeComponent(text)
+                reply(id)
+                push()
+            }
+            "setupDone" -> {
+                Components.markSetupDone(host)
+                reply(id)
+                push()
+            }
             "pickPlugin" -> host.pickPlugin { uri ->
                 if (uri == null) {
                     reply(id, JSONObject().put("cancel", true))
@@ -510,6 +525,7 @@ class WebBridge(private val host: BaseUiActivity) {
 
     private fun computeBlocked(conf: String, ov: String): String? {
         if (conf.startsWith("dpi://")) return null
+        if (!Wg.isConf(conf) && !Components.anyCore(host)) return "Не установлено ни одного ядра: скачайте в Настройки → Компоненты"
         if (Wg.isConf(conf)) {
             return if (CorePlugins.wgEngine(host, conf, ov) != null) null else CorePlugins.wgReason(host, conf, ov)
         }
@@ -669,9 +685,10 @@ class WebBridge(private val host: BaseUiActivity) {
             "sbCores",
             JSONObject().put("active", SbCores.active(host)).put("list", sbArr)
                 .put("releases", if (st.sbReleases == null) JSONObject.NULL else sbRel)
-                .put("builtin", CorePlugins.singboxFile(host).exists())
+                .put("builtin", Components.full && CorePlugins.singboxFile(host).exists())
         )
         o.put("corePlugins", CorePlugins.snapshot(host))
+        o.put("components", Components.status(host))
         o.put("appIcon", AppIcon.snapshot(host))
 
         val up = Updates.state

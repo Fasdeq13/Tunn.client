@@ -4,9 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-TARGET="${1:-all}"
+VERSION="3.9"
+TARGET="android"
+[ "${1:-}" = android ] && shift
+VARIANT="${1:-all}"
 MODE="${2:-release}"
-case "$TARGET" in all|android|desktop|windows) ;; *) echo "usage: $0 [all|android|desktop|windows] [debug|release|play]"; exit 2 ;; esac
+case "$VARIANT" in all|full|min|netinstall) ;; *) echo "usage: $0 [android] [all|full|min|netinstall] [debug|release|play]"; exit 2 ;; esac
+case "$MODE" in debug|release|play) ;; *) echo "usage: $0 [android] [all|full|min|netinstall] [debug|release|play]"; exit 2 ;; esac
 
 CACHE="${FQ_CACHE:-$ROOT/.fqbuild}"
 PLATFORM="android-36"
@@ -31,17 +35,7 @@ case "$(uname -s)" in Linux) OS=linux ;; Darwin) OS=mac ;; MINGW*|MSYS*|CYGWIN*)
 if command -v pacman >/dev/null 2>&1; then
   NEED=()
   for c in git curl unzip; do command -v "$c" >/dev/null 2>&1 || NEED+=("$c"); done
-  case "$TARGET" in android|all) command -v java >/dev/null 2>&1 || NEED+=(jdk21-openjdk) ;; esac
-  if [ "$TARGET" = windows ] && [ "$OS" = linux ]; then
-    command -v cc >/dev/null 2>&1 || NEED+=(base-devel)
-    command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || NEED+=(mingw-w64-gcc)
-  elif [ "$TARGET" != android ]; then
-    command -v cc >/dev/null 2>&1 || NEED+=(base-devel)
-    if [ "$OS" = linux ]; then
-      command -v pkg-config >/dev/null 2>&1 || NEED+=(pkgconf)
-      for lib in gtk3 libayatana-appindicator xdotool; do pacman -Qi "$lib" >/dev/null 2>&1 || NEED+=("$lib"); done
-    fi
-  fi
+  command -v java >/dev/null 2>&1 || NEED+=(jdk21-openjdk)
   [ "${#NEED[@]}" -gt 0 ] && { say "pacman: ${NEED[*]}"; sudo pacman -S --needed --noconfirm "${NEED[@]}"; }
 fi
 find_jdk() {
@@ -54,9 +48,7 @@ find_jdk() {
   done
   return 1
 }
-JDK=""
-if [ "$TARGET" = android ] || [ "$TARGET" = all ]; then JDK="$(find_jdk || true)"; fi
-if [ "$TARGET" = android ] || [ "$TARGET" = all ]; then
+JDK="$(find_jdk || true)"
 if [ -z "$JDK" ] && command -v pacman >/dev/null 2>&1; then
   say "installing JDK 21 (Gradle 8 does not run on newer JDKs)"
   sudo pacman -S --needed --noconfirm jdk21-openjdk
@@ -66,7 +58,6 @@ fi
 export JAVA_HOME="$JDK"
 export PATH="$JDK/bin:$PATH"
 say "JDK: $JDK"
-fi
 
 if ! command -v cargo >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
   if command -v rustup >/dev/null 2>&1; then
@@ -79,39 +70,6 @@ if ! command -v cargo >/dev/null 2>&1 || ! cargo --version >/dev/null 2>&1; then
 fi
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-
-TDIR="${TUNN_TARGET:-$HOME/.cache/tunn-target}"
-export CARGO_TARGET_DIR="$TDIR"
-
-build_desktop() {
-  say "desktop (cargo build --release)"
-  (cd desktop && cargo build --release)
-  for f in "$TDIR/release/tunn" "$TDIR/release/tunn.exe"; do
-    [ -f "$f" ] && cp "$f" dist/ && say "desktop: dist/$(basename "$f")"
-  done
-  return 0
-}
-
-build_windows() {
-  if [ "$OS" = win ]; then
-    say "windows (native cargo build --release)"
-    (cd desktop && cargo build --release)
-  else
-    say "windows (cross-compile x86_64-pc-windows-gnu)"
-    command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || die "install mingw-w64 (pacman -S mingw-w64-gcc | apt install gcc-mingw-w64-x86-64)"
-    rustup target add x86_64-pc-windows-gnu >/dev/null
-    (cd desktop && CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc cargo build --release --target x86_64-pc-windows-gnu)
-  fi
-  local f
-  for f in "$TDIR/x86_64-pc-windows-gnu/release/tunn.exe" "$TDIR/release/tunn.exe"; do
-    if [ -f "$f" ]; then
-      cp "$f" dist/Tunn-3.8-windows.exe
-      say "windows: dist/Tunn-3.8-windows.exe"
-      return 0
-    fi
-  done
-  die "tunn.exe not found"
-}
 
 build_android() {
 
@@ -193,10 +151,8 @@ build_android() {
     gradle="$gdir/bin/gradle"
   fi
 
-  local task="assembleDebug" args=(-Papp.vcode="$(( $(date +%s) / 60 ))")
+  local args=(-Papp.vcode="$(( $(date +%s) / 60 ))")
   if [ "$MODE" = release ] || [ "$MODE" = play ]; then
-    task="assembleRelease"
-    if [ "$MODE" = play ]; then task="bundleRelease"; fi
     local ks="${KS_PATH:-}" kpass="${KS_PASS:-}" kalias="${KS_ALIAS:-}"
     if [ -z "$ks" ]; then
       mkdir -p "$HOME/.fasdeq"
@@ -218,29 +174,35 @@ build_android() {
     say "signing with $ks"
     args+=(-Pks.path="$ks" -Pks.pass="$kpass" -Pks.alias="$kalias")
   fi
-  say "gradle $task"
-  (cd android && "$gradle" ":app:$task" "${args[@]}" --no-daemon)
 
-  if [ "$MODE" = play ]; then
-    local aab; aab="$(find android/app/build/outputs/bundle -name '*.aab' | head -1)"
-    [ -n "$aab" ] || die "AAB not found"
-    cp "$aab" "dist/Tunn-3.8-play.aab"
-    say "AAB for Google Play: $ROOT/dist/Tunn-3.8-play.aab (signed with your upload key; keep $HOME/.fasdeq/release.jks safe)"
-    return 0
-  fi
-  local apk
-  apk="$(find android/app/build/outputs/apk -name '*.apk' ! -name '*unsigned*' | head -1)"
-  [ -n "$apk" ] || die "APK not found"
-  local asg; asg="$(find "${sdk:-$CACHE/android-sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)"
-  if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
-  cp "$apk" "dist/Tunn-3.8-$MODE.apk"
-  say "APK: $ROOT/dist/Tunn-3.8-$MODE.apk"
+  local variants=(full min netinstall)
+  [ "$VARIANT" != all ] && variants=("$VARIANT")
+  [ "$MODE" = play ] && variants=(full)
+  local type="Debug" tdir="debug"
+  [ "$MODE" != debug ] && { type="Release"; tdir="release"; }
+  local v cap
+  for v in "${variants[@]}"; do
+    cap="$(printf '%s' "${v:0:1}" | tr a-z A-Z)${v:1}"
+    if [ "$MODE" = play ]; then
+      say "gradle bundle${cap}${type}"
+      (cd android && "$gradle" ":app:bundle${cap}${type}" "${args[@]}" --no-daemon)
+      local aab; aab="$(find android/app/build/outputs/bundle -name '*.aab' | head -1)"
+      [ -n "$aab" ] || die "AAB not found"
+      cp "$aab" "dist/Tunn-android-$VERSION-play.aab"
+      say "AAB for Google Play: $ROOT/dist/Tunn-android-$VERSION-play.aab (keep $HOME/.fasdeq/release.jks safe)"
+      continue
+    fi
+    say "gradle assemble${cap}${type}"
+    (cd android && "$gradle" ":app:assemble${cap}${type}" "${args[@]}" --no-daemon)
+    local apk
+    apk="$(find "android/app/build/outputs/apk/$v/$tdir" -name '*.apk' ! -name '*unsigned*' 2>/dev/null | head -1)"
+    [ -n "$apk" ] || die "APK not found for $v"
+    local asg; asg="$(find "${sdk:-$CACHE/android-sdk}/build-tools" -name apksigner 2>/dev/null | sort | tail -1)"
+    if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
+    cp "$apk" "dist/Tunn-android-$VERSION-$v.apk"
+    say "APK: $ROOT/dist/Tunn-android-$VERSION-$v.apk"
+  done
 }
 
-case "$TARGET" in
-  android) build_android ;;
-  desktop) if [ "$OS" = win ]; then build_windows; else build_desktop; fi ;;
-  windows) build_windows ;;
-  all) build_android; if [ "$OS" = win ]; then build_windows; else build_desktop; fi ;;
-esac
+build_android
 say "done"

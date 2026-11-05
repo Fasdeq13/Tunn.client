@@ -344,7 +344,7 @@ class AppState(private val app: Application) {
         }
     }
 
-    private fun probeConfigFor(server: Server): String? {
+    private fun probeOutboundFor(server: Server): JSONObject? {
         if (server.conf == CorePlugins.DPI_CONF) return null
         val plugin = try {
             Plugins.forConf(app, server.conf)
@@ -360,7 +360,7 @@ class AppState(private val app: Application) {
             val src = if (Wg.isConf(server.conf) && Wg.isAwg(server.conf)) Wg.stripAwg(server.conf) else Plugins.effectiveConf(app, server.conf)
             val ob = Links.parse(src).outbound
             if (ob.optString("protocol") == "tuic") return null
-            Services.probeConfig(ob)
+            ob
         } catch (e: Exception) {
             null
         }
@@ -384,10 +384,21 @@ class AppState(private val app: Application) {
                 }
             }
             try {
-                list.map { server ->
+                try { ping(list).join() } catch (e: Exception) { }
+                val ordered = list.sortedBy { pings[it.id]?.best()?.takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
+                ordered.map { server ->
                     launch(Dispatchers.IO) {
                         gate.withPermit {
-                            val config = synchronized(probeLock) { probeConfigFor(server) }
+                            val pg = pings[server.id]
+                            val deadPing = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE && !Wg.isConf(server.conf)
+                            val outbound = if (deadPing) null else synchronized(probeLock) { probeOutboundFor(server) }
+                            val config = outbound?.let {
+                                try {
+                                    Links.resolve(it)
+                                } catch (e: Exception) {
+                                }
+                                Services.probeConfig(it)
+                            }
                             val timeout = 8L
                             val left = java.util.concurrent.atomic.AtomicInteger(Services.names.size)
                             (0 until Services.names.size).map { index ->
@@ -822,11 +833,6 @@ class AppState(private val app: Application) {
                             PingResult(tcp = Ping.FAIL)
                         }
                         pings[server.id] = result
-                        if (result.best() == Int.MAX_VALUE && checks.containsKey(server.id) && !Wg.isConf(server.conf)) {
-                            synchronized(checks) {
-                                checks[server.id] = ServiceCheck(ms = listOf(-1, -1, -1), busy = false)
-                            }
-                        }
                     }
                 }
             }.joinAll()
@@ -1054,6 +1060,52 @@ class AppState(private val app: Application) {
         } else if (!want && index >= 0) {
             removeMany(setOf(CorePlugins.DPI_ID))
         }
+    }
+
+    suspend fun installComponent(id: String): String? {
+        return try {
+            when (id) {
+                Components.SINGBOX -> {
+                    coreBusy = "Загружаю список версий sing-box…"
+                    val rel = withContext(Dispatchers.IO) { SbCores.releases() }.firstOrNull()
+                        ?: return "Не удалось получить список версий sing-box"
+                    downloadSb(rel)
+                }
+                Components.XRAY -> {
+                    coreBusy = "Скачиваю Xray…"
+                    restoreXray().also { refreshCores() }
+                }
+                Components.AWG -> {
+                    coreBusy = "Скачиваю AmneziaWG…"
+                    withContext(Dispatchers.IO) { Components.installAwg(app) }
+                    CorePlugins.restore(app, CorePlugins.AWG)
+                    null
+                }
+                else -> "Неизвестный компонент"
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Не удалось скачать"
+        } finally {
+            coreBusy = null
+            syncDpiServer()
+        }
+    }
+
+    fun removeComponent(id: String) {
+        when (id) {
+            Components.SINGBOX -> {
+                for (c in SbCores.list(app)) SbCores.delete(app, c.id)
+                refreshSb()
+            }
+            Components.XRAY -> {
+                for (c in Cores.list(app)) Cores.delete(app, c.id)
+                refreshCores()
+            }
+            Components.AWG -> Components.removeAwg(app)
+        }
+        syncDpiServer()
     }
 
     suspend fun restoreXray(): String? = withContext(Dispatchers.IO) {

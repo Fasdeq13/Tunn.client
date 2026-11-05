@@ -251,7 +251,7 @@ fun XraySheet(a: ComposeActivity, s: Snap) {
     val open = remember { mutableStateOf(false) }
     SheetTitle("Ядро Xray", "Своё ядро запускается отдельным процессом. Нужен исполняемый файл Xray для Android (arm64) или zip с ним. Применяется при следующем подключении.")
     BusyLine(s.xrayBusy)
-    VerRow(s.xrayActive.isEmpty(), "Встроенное", if (s.xrayBuiltin.isNotEmpty()) "Xray " + s.xrayBuiltin else "Идёт в комплекте с приложением", onPick = { a.call("selectCore", "") })
+    if (s.dist == "full") VerRow(s.xrayActive.isEmpty(), "Встроенное", if (s.xrayBuiltin.isNotEmpty()) "Xray " + s.xrayBuiltin else "Идёт в комплекте с приложением", onPick = { a.call("selectCore", "") })
     for (c in s.xrayList) VerRow(s.xrayActive == c.id, c.label, if (c.version.isNotEmpty()) "Xray " + c.version else null, { a.call("selectCore", c.id) }, { a.call("deleteCore", c.id) })
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
