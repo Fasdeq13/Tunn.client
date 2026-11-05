@@ -301,7 +301,7 @@ fun Modifier.glass(shape: Shape, fallback: Color = Color.Transparent): Modifier 
     if (!g.on || g.blurred == null || g.root.width == 0) {
         return if (fallback == Color.Transparent) this else this.drawBehind {
             val o = shape.createOutline(size, layoutDirection, this)
-            val path = Path().apply { addOutline(o) }
+            val path = outlinePath(o)
             drawPath(path, fallback)
         }
     }
@@ -313,7 +313,7 @@ fun Modifier.glass(shape: Shape, fallback: Color = Color.Transparent): Modifier 
     val root = g.root
     return this.onGloballyPositioned { pos = it.positionInWindow() }.drawBehind {
         val o = shape.createOutline(size, layoutDirection, this)
-        val path = Path().apply { addOutline(o) }
+        val path = outlinePath(o)
         clipPath(path) {
             drawImage(
                 blurred,
@@ -446,8 +446,14 @@ fun Modifier.glassDrop(shape: Shape): Modifier {
     if (g.on && Build.VERSION.SDK_INT >= 33 && g.reg != null) return this.glassMerged(shape, g.reg, true)
     return this.drawBehind {
         val o = shape.createOutline(size, layoutDirection, this)
-        val path = Path().apply { addOutline(o) }
+        val path = outlinePath(o)
         drawPath(path, Color.White.copy(alpha = if (g.dark) 0.22f else 0.55f))
         drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(1.dp.toPx()))
     }
+}
+
+private fun outlinePath(o: androidx.compose.ui.graphics.Outline): Path = when (o) {
+    is androidx.compose.ui.graphics.Outline.Rectangle -> Path().apply { addRect(o.rect) }
+    is androidx.compose.ui.graphics.Outline.Rounded -> Path().apply { addRoundRect(o.roundRect) }
+    is androidx.compose.ui.graphics.Outline.Generic -> o.path
 }
