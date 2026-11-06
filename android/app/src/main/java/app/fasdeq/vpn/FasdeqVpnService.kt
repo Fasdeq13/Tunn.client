@@ -306,10 +306,14 @@ class FasdeqVpnService : VpnService() {
     }
 
     private fun start(params: Params, isRetry: Boolean) {
+        val mine = epoch
         Thread {
             synchronized(lock) {
+                if (mine != epoch || userStop || halted) return@synchronized
+                val cancelled = { mine != epoch || userStop || halted }
                 try {
                     closeCore(3000)
+                    if (cancelled()) return@synchronized
                     childPort = 0
                     generation++
                     stopping = false
@@ -337,6 +341,10 @@ class FasdeqVpnService : VpnService() {
                     } else {
                         config = Links.buildConfig(outbound, params.mtu, params.tuning, rules)
                     }
+                    if (cancelled()) {
+                        closeCore(1500)
+                        return@synchronized
+                    }
                     val t = params.tuning
                     val builder = Builder()
                         .setSession("Tunn")
@@ -362,6 +370,10 @@ class FasdeqVpnService : VpnService() {
                     val fd = tun.dup().detachFd()
                     coreFd = fd
                     core.startLoop(config, fd)
+                    if (cancelled()) {
+                        closeCore(1500)
+                        return@synchronized
+                    }
                     connectedAt = System.currentTimeMillis()
                     connectedMono = SystemClock.elapsedRealtime()
                     registerNet()
@@ -570,7 +582,7 @@ class FasdeqVpnService : VpnService() {
     }
 
 
-    private fun socksProbe(port: Int): Boolean = try {
+    private fun socksProbe(port: Int, hostName: String = "cp.cloudflare.com"): Boolean = try {
         Socket().use { sock ->
             sock.soTimeout = 8000
             sock.connect(InetSocketAddress("127.0.0.1", port), 3000)
@@ -579,11 +591,11 @@ class FasdeqVpnService : VpnService() {
             o.write(byteArrayOf(5, 1, 0)); o.flush()
             val a = ByteArray(2)
             if (i.read(a) != 2 || a[1].toInt() != 0) return@use false
-            val host = "cp.cloudflare.com".toByteArray()
+            val host = hostName.toByteArray()
             o.write(byteArrayOf(5, 1, 0, 3, host.size.toByte()) + host + byteArrayOf(0, 80)); o.flush()
             val r = ByteArray(10)
             if (i.read(r) < 2 || r[1].toInt() != 0) return@use false
-            o.write("GET /generate_204 HTTP/1.1\r\nHost: cp.cloudflare.com\r\nConnection: close\r\n\r\n".toByteArray()); o.flush()
+            o.write("GET /generate_204 HTTP/1.1\r\nHost: $hostName\r\nConnection: close\r\n\r\n".toByteArray()); o.flush()
             i.read() >= 0
         }
     } catch (e: Throwable) {
@@ -603,7 +615,7 @@ class FasdeqVpnService : VpnService() {
                     val port = childPort
                     var ok = true
                     if (port > 0) {
-                        ok = socksProbe(port) || socksProbe(port)
+                        ok = socksProbe(port) || socksProbe(port, "connectivitycheck.gstatic.com") || socksProbe(port, "www.msftconnecttest.com")
                     } else {
                         val v = stats() ?: continue
                         val rx = v.optLong("rx", 0L)
@@ -613,13 +625,18 @@ class FasdeqVpnService : VpnService() {
                         lastTx = tx
                         ok = stuck < 4
                     }
-                    if (ok && !VpnBridge.vpnNetwork(this)) ok = false
+                    if (ok && iface == null) ok = false
                     if (ok) {
                         bad = 0
                         if (port > 0) stuck = 0
                     } else if (++bad >= 3 || (port <= 0 && stuck >= 4)) {
-                        recover("Туннель перестал отвечать, переподключаюсь")
-                        return@Thread
+                        if (retries >= MAX_RETRIES) {
+                            bad = 0
+                            stuck = 0
+                        } else {
+                            recover("Туннель перестал отвечать, переподключаюсь")
+                            return@Thread
+                        }
                     }
                 }
             } catch (e: Throwable) {
@@ -754,7 +771,7 @@ class FasdeqVpnService : VpnService() {
             } catch (e: Throwable) {
             }
             try {
-                closeCore(1500)
+                if (mine == epoch) closeCore(1500)
             } catch (e: Throwable) {
             }
             try {
@@ -782,7 +799,7 @@ class FasdeqVpnService : VpnService() {
         stopForegroundCompat()
         Thread {
             try {
-                closeCore(1500)
+                if (mine == epoch) closeCore(1500)
             } catch (e: Throwable) {
             }
             try {

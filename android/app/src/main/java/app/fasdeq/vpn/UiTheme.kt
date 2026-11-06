@@ -74,10 +74,10 @@ private fun lum(c: Color): Float = 0.2126f * c.red + 0.7152f * c.green + 0.0722f
 
 private fun on(c: Color): Color = if (lum(c) > 0.55f) Color(0xFF101414) else Color(0xFFFFFFFF)
 
-fun accentScheme(accent: Color, dark: Boolean, bg: Color?, amoled: Boolean): ColorScheme {
+fun accentScheme(accent: Color, dark: Boolean, bg: Color?, amoled: Boolean, satK: Float = 1f, surfK: Float = 1f): ColorScheme {
     val a = toHsl(accent)
     val h = a.h
-    val s = max(a.s, if (a.s < 0.08f) 0f else 0.35f).coerceAtMost(1f)
+    val s = (max(a.s, if (a.s < 0.08f) 0f else 0.35f) * satK).coerceIn(0f, 1f)
     val tint = if (a.s < 0.08f) 0f else 1f
     val primary = if (dark) hsl(h, s, max(a.l, 0.68f)) else hsl(h, s, min(a.l, 0.42f))
     val bgLight = bg != null && lum(bg) > 0.55f
@@ -85,7 +85,7 @@ fun accentScheme(accent: Color, dark: Boolean, bg: Color?, amoled: Boolean): Col
     val base = bg ?: if (useDark) hsl(h, 0.10f * tint, if (amoled) 0f else 0.075f) else hsl(h, 0.16f * tint, 0.97f)
     val bh = toHsl(base)
     fun step(k: Float): Color =
-        if (useDark) hsl(bh.h, bh.s, (bh.l + k).coerceAtMost(0.95f)) else hsl(bh.h, bh.s, (bh.l - k).coerceAtLeast(0.05f))
+        if (useDark) hsl(bh.h, bh.s, (bh.l + k * surfK).coerceAtMost(0.95f)) else hsl(bh.h, bh.s, (bh.l - k * surfK).coerceAtLeast(0.05f))
     val onSurface = if (useDark) hsl(bh.h, 0.06f, 0.9f) else hsl(bh.h, 0.1f, 0.1f)
     val variant = if (useDark) hsl(bh.h, 0.06f, 0.72f) else hsl(bh.h, 0.08f, 0.32f)
     val pc = if (useDark) hsl(h, s * 0.55f, 0.24f) else hsl(h, s * 0.75f, 0.88f)
@@ -131,7 +131,8 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
     val bg = if (s.bgOn && !s.glass) parseHex(s.bgHex) else null
     if (bg != null) dark = lum(bg) <= 0.55f
     val custom = parseHex(s.accentHex)
-    val scheme: ColorScheme = if (s.glass) glassScheme(dark) else if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
+    val wall = s.glass || s.glassBg != 0L
+    var scheme: ColorScheme = if (s.glass) glassScheme(dark, if (s.t("gAcc", 0f) > 0.5f) custom else null) else if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
         var d = if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         if (dark && s.amoled) {
             d = d.copy(
@@ -141,7 +142,19 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
         }
         d
     } else {
-        accentScheme(custom ?: Color(0xFF4FD8C8), dark, bg, dark && s.amoled)
+        accentScheme(custom ?: Color(0xFF4FD8C8), dark, bg, dark && s.amoled, s.t("mSat", 100f) / 100f, s.t("mSurf", 100f) / 100f)
+    }
+    if (wall && !s.glass) scheme = scheme.copy(background = Color.Transparent, surface = Color.Transparent)
+    val ui = UiTune(s.t("uiRadius", 100f) / 100f, s.t("uiSpace", 100f) / 100f, s.t("swStyle", 0f) > 0.5f, s.t("cardStyle", 0f).toInt())
+    val inner: @Composable () -> Unit = {
+        val d = androidx.compose.ui.platform.LocalDensity.current
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalUi provides ui,
+            androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, d.fontScale * s.t("uiFont", 100f) / 100f)
+        ) {
+            if (wall) BgHost(s, dark, s.glass, content)
+            else androidx.compose.runtime.CompositionLocalProvider(LocalGlass provides GlassEnv(false, dark, 55, null, androidx.compose.ui.unit.IntSize.Zero)) { content() }
+        }
     }
     SideEffect {
         (ctx as? BaseUiActivity)?.applyBars(dark)
@@ -155,12 +168,12 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
             large = RoundedCornerShape(26.dp),
             extraLarge = RoundedCornerShape(34.dp)
         ),
-        content = if (s.glass) ({ GlassHost(s, dark, content) }) else content
+        content = inner
     )
 }
 
-fun glassScheme(dark: Boolean): ColorScheme {
-    val blue = if (dark) Color(0xFF0A84FF) else Color(0xFF007AFF)
+fun glassScheme(dark: Boolean, accent: Color? = null): ColorScheme {
+    val blue = if (accent != null) { val h = toHsl(accent); if (dark) hsl(h.h, h.s, max(h.l, 0.6f)) else hsl(h.h, h.s, min(h.l, 0.5f)) } else if (dark) Color(0xFF0A84FF) else Color(0xFF007AFF)
     val fg = if (dark) Color.White else Color(0xFF101114)
     val soft = if (dark) Color(0xFFEBEBF5).copy(alpha = 0.62f) else Color(0xFF3C3C43).copy(alpha = 0.68f)
     val glass = { a: Float -> if (dark) Color(0xFF1C1C24).copy(alpha = a) else Color.White.copy(alpha = a) }

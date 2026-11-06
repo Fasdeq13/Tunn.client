@@ -51,8 +51,32 @@ import kotlin.math.min
 class GlassEnv(
     val on: Boolean, val dark: Boolean, val level: Int, val blurred: ImageBitmap?, val root: IntSize,
     val sharpSh: BitmapShader? = null, val blurSh: BitmapShader? = null, val scaleS: Float = 1f, val scaleB: Float = 1f,
-    val reg: GlassRegistry? = null
+    val reg: GlassRegistry? = null,
+    val prm: GlassParams = GlassParams(),
+    val wall: Boolean = false
 )
+
+class GlassParams(
+    val blur: Float = 50f, val tint: Float = 50f, val refr: Float = 100f, val edge: Float = 18f, val disp: Float = 100f,
+    val spec: Float = 100f, val sat: Float = 155f, val merge: Float = 10f, val drop: Float = 100f
+)
+
+fun Snap.t(key: String, def: Float): Float = tune[key] ?: def
+
+fun Snap.glassParams() = GlassParams(
+    t("gBlur", 50f), t("gTint", 50f), t("gRefr", 100f), t("gEdge", 18f), t("gDisp", 100f),
+    t("gSpec", 100f), t("gSat", 155f), t("gMerge", 10f), t("gDrop", 100f)
+)
+
+class UiTune(val radius: Float = 1f, val space: Float = 1f, val swIos: Boolean = false, val card: Int = 0)
+
+val LocalUi = compositionLocalOf { UiTune() }
+
+@Composable
+fun cr(v: Int): androidx.compose.ui.unit.Dp = (v * LocalUi.current.radius).dp
+
+@Composable
+fun sp(v: Int): androidx.compose.ui.unit.Dp = (v * LocalUi.current.space).dp
 
 val LocalGlass = compositionLocalOf { GlassEnv(false, false, 55, null, IntSize.Zero) }
 
@@ -72,6 +96,9 @@ uniform float scaleS;
 uniform float scaleB;
 uniform float edgeW;
 uniform float strength;
+uniform float disp;
+uniform float specM;
+uniform float dropM;
 uniform float4 tint;
 uniform float sat;
 uniform float dark;
@@ -135,12 +162,12 @@ half4 shade(float2 fc, float d, float2 nrm, float eW, float str, float tA, float
     float2 d0 = nrm * f * str;
     float3 blurC = float3(
         bgb.eval((fc + d0) * scaleB).r,
-        bgb.eval((fc + d0 * 1.10) * scaleB).g,
-        bgb.eval((fc + d0 * 1.22) * scaleB).b);
+        bgb.eval((fc + d0 * (1.0 + 0.10 * disp)) * scaleB).g,
+        bgb.eval((fc + d0 * (1.0 + 0.22 * disp)) * scaleB).b);
     float3 sharpC = float3(
         bg.eval((fc + d0) * scaleS).r,
-        bg.eval((fc + d0 * 1.10) * scaleS).g,
-        bg.eval((fc + d0 * 1.22) * scaleS).b);
+        bg.eval((fc + d0 * (1.0 + 0.10 * disp)) * scaleS).g,
+        bg.eval((fc + d0 * (1.0 + 0.22 * disp)) * scaleS).b);
     float3 col = mix(blurC, sharpC, clamp(f * 0.6 + (rimM - 1.0) * 1.2, 0.0, 0.85));
     float luma = dot(col, float3(0.299, 0.587, 0.114));
     col = mix(float3(luma), col, sat);
@@ -149,8 +176,8 @@ half4 shade(float2 fc, float d, float2 nrm, float eW, float str, float tA, float
     float s1 = max(dot(nrm, L), 0.0);
     float s2 = max(dot(nrm, -L), 0.0);
     float rim = smoothstep(2.4 * rimM, 0.0, depth);
-    float spec = rim * (pow(s1, 1.4) + 0.45 * pow(s2, 1.4)) * rimM;
-    float glow = smoothstep(eW, 0.0, depth) * (dark > 0.5 ? 0.07 : 0.10) * (0.5 + 0.5 * s1) * rimM;
+    float spec = rim * (pow(s1, 1.4) + 0.45 * pow(s2, 1.4)) * rimM * specM;
+    float glow = smoothstep(eW, 0.0, depth) * (dark > 0.5 ? 0.07 : 0.10) * (0.5 + 0.5 * s1) * rimM * specM;
     float sheen = smoothstep(eW * 2.0, 0.0, depth) * max(-nrm.y, 0.0) * (dark > 0.5 ? 0.05 : 0.12);
     col = col + (dark > 0.5 ? 0.70 : 0.95) * spec + glow + sheen;
     col = col - (dark > 0.5 ? 0.0 : 0.05) * smoothstep(1.6, 0.0, depth) * (1.0 - spec);
@@ -174,7 +201,7 @@ half4 main(float2 fc) {
             float2 g2 = float2(
                 dropField(fc + float2(e, 0.0)) - dropField(fc - float2(e, 0.0)),
                 dropField(fc + float2(0.0, e)) - dropField(fc - float2(0.0, e)));
-            half4 top = shade(fc, dd, g2 / max(length(g2), 0.0001), edgeW * 0.7, strength * 1.5, tint.a * 0.3, 1.3);
+            half4 top = shade(fc, dd, g2 / max(length(g2), 0.0001), edgeW * 0.7, strength * 1.5 * dropM, tint.a * 0.3, 1.3);
             return top + base * (1.0 - top.a);
         }
     }
@@ -271,19 +298,28 @@ object GlassBg {
 
     class Result(val full: ImageBitmap, val blurred: ImageBitmap)
 
-    fun build(c: Context, rootW: Int, rootH: Int, dark: Boolean, level: Int): Result {
+    fun build(c: Context, rootW: Int, rootH: Int, dark: Boolean, blurK: Float, bgBlur: Float): Result {
         val w = max(rootW, 2)
         val h = max(rootH, 2)
         val user = load(c)
         val fw = min(w, 1080)
         val fh = max(2, (fw.toLong() * h / w).toInt())
-        val full = if (user != null) cropTo(user, fw, fh) else generated(fw, fh, dark)
+        var full = if (user != null) cropTo(user, fw, fh) else generated(fw, fh, dark)
         val sw = 110
         val sh = max(2, sw * h / w)
+        if (bgBlur > 0f) {
+            val bs = Bitmap.createScaledBitmap(full, sw, sh, true)
+            val bp = IntArray(sw * sh)
+            bs.getPixels(bp, 0, sw, 0, 0, sw, sh)
+            boxBlur(bp, sw, sh, 1 + (bgBlur / 100f * 9f).toInt())
+            val bo = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888)
+            bo.setPixels(bp, 0, sw, 0, 0, sw, sh)
+            full = Bitmap.createScaledBitmap(bo, fw, fh, true)
+        }
         val small = Bitmap.createScaledBitmap(full, sw, sh, true)
         val px = IntArray(sw * sh)
         small.getPixels(px, 0, sw, 0, 0, sw, sh)
-        val r = (1 + (3.5f * (1f - level / 100f))).toInt() + 1
+        val r = 1 + (blurK / 100f * 7f).toInt()
         boxBlur(px, sw, sh, r)
         val out = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888)
         out.setPixels(px, 0, sw, 0, 0, sw, sh)
@@ -372,7 +408,8 @@ private fun GlassLayer(g: GlassEnv, reg: GlassRegistry) {
     val brush = remember(shader) { ShaderBrush(shader) }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     val t = g.level / 100f
-    val tintA = lerpf(0.50f, 0.06f, t)
+    val pm = g.prm
+    val tintA = (lerpf(0.50f, 0.06f, t) * pm.tint / 50f).coerceIn(0f, 0.95f)
     val tint = if (g.dark) floatArrayOf(0.09f, 0.10f, 0.14f) else floatArrayOf(1f, 1f, 1f)
     shader.setInputShader("bg", g.sharpSh!!)
     shader.setInputShader("bgb", g.blurSh!!)
@@ -405,34 +442,38 @@ private fun GlassLayer(g: GlassEnv, reg: GlassRegistry) {
         shader.setFloatUniform("rC", c)
         shader.setFloatUniform("scaleS", g.scaleS)
         shader.setFloatUniform("scaleB", g.scaleB)
-        shader.setFloatUniform("edgeW", 18f * density)
-        shader.setFloatUniform("strength", (10f + 26f * t) * density)
-        shader.setFloatUniform("k", 10f * density)
+        shader.setFloatUniform("edgeW", pm.edge * density)
+        shader.setFloatUniform("strength", (10f + 26f * t) * density * pm.refr / 100f)
+        shader.setFloatUniform("k", max(pm.merge, 0.5f) * density)
+        shader.setFloatUniform("disp", pm.disp / 100f)
+        shader.setFloatUniform("specM", pm.spec / 100f)
+        shader.setFloatUniform("dropM", pm.drop / 100f)
         shader.setFloatUniform("tint", tint[0], tint[1], tint[2], tintA)
-        shader.setFloatUniform("sat", 1.55f)
+        shader.setFloatUniform("sat", pm.sat / 100f)
         shader.setFloatUniform("dark", if (g.dark) 1f else 0f)
         drawRect(brush)
     })
 }
 
 @Composable
-fun GlassHost(s: Snap, dark: Boolean, content: @Composable () -> Unit) {
+fun BgHost(s: Snap, dark: Boolean, glassOn: Boolean, content: @Composable () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var size by remember { mutableStateOf(IntSize.Zero) }
-    val built = if (size.width > 0) remember(size, dark, s.glassBg, s.glassLevel) { GlassBg.build(ctx, size.width, size.height, dark, s.glassLevel) } else null
+    val built = if (size.width > 0) remember(size, dark, s.glassBg, s.t("gBlur", 50f), s.t("bgBlur", 0f)) { GlassBg.build(ctx, size.width, size.height, dark, s.t("gBlur", 50f), s.t("bgBlur", 0f)) } else null
     val sharpSh = if (built != null) remember(built) { BitmapShader(built.full.asAndroidBitmap(), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) } else null
     val blurSh = if (built != null) remember(built) { BitmapShader(built.blurred.asAndroidBitmap(), Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) } else null
     val rw = max(size.width, 1).toFloat()
     val reg = remember { GlassRegistry() }
     val env = GlassEnv(
-        true, dark, s.glassLevel, built?.blurred, size, sharpSh, blurSh,
+        glassOn, dark, s.glassLevel, built?.blurred, size, sharpSh, blurSh,
         (built?.full?.width ?: 1) / rw, (built?.blurred?.width ?: 1) / rw,
-        if (Build.VERSION.SDK_INT >= 33 && sharpSh != null) reg else null
+        if (glassOn && Build.VERSION.SDK_INT >= 33 && sharpSh != null) reg else null,
+        s.glassParams(), true
     )
     Box(Modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (built != null) {
             Image(built.full, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-            Box(Modifier.fillMaxSize().drawBehind { drawRect(if (dark) Color.Black.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f)) })
+            Box(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black.copy(alpha = (s.t("bgDim", 0f) / 100f * 0.8f + (if (glassOn && dark) 0.12f else 0f)).coerceIn(0f, 0.92f))) })
         }
         if (Build.VERSION.SDK_INT >= 33 && built != null && env.reg != null) GlassLayer(env, reg)
         androidx.compose.runtime.CompositionLocalProvider(LocalGlass provides env) { content() }

@@ -49,20 +49,23 @@ import androidx.compose.ui.text.input.ImeAction
 
 @Composable
 fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = if (LocalGlass.current.on) 30.dp else 18.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = if (LocalGlass.current.on) sp(30) else sp(18))) {
         Text(
             title,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
         )
-        val sh = RoundedCornerShape(if (LocalGlass.current.on) 28.dp else 24.dp)
+        val sh = RoundedCornerShape(if (LocalGlass.current.on) cr(28) else cr(24))
+        val cardStyle = LocalUi.current.card
+        val glassOn = LocalGlass.current.on
         Surface(
             shape = sh,
-            color = if (LocalGlass.current.on) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
+            color = if (glassOn || cardStyle != 0) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
+            border = if (!glassOn && cardStyle == 1) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
             modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass(sh)
         ) {
-            Column(Modifier.padding(vertical = if (LocalGlass.current.on) 8.dp else 4.dp), content = content)
+            Column(Modifier.padding(vertical = if (glassOn) sp(8) else sp(4)), content = content)
         }
     }
 }
@@ -82,7 +85,7 @@ fun BaseRow(
         m = m.combinedClickable(enabled = enabled, onClick = { onClick?.invoke() }, onLongClick = onLong)
     }
     Row(
-        m.padding(horizontal = 18.dp, vertical = if (LocalGlass.current.on) 17.dp else 12.dp).alpha(if (enabled) 1f else 0.45f),
+        m.padding(horizontal = 18.dp, vertical = if (LocalGlass.current.on) sp(17) else sp(12)).alpha(if (enabled) 1f else 0.45f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (leading != null) {
@@ -113,7 +116,7 @@ fun SwitchRow(title: String, sub: String? = null, checked: Boolean, enabled: Boo
         title, sub, enabled = enabled,
         onClick = { onChange(!checked) },
         trailing = {
-            if (LocalGlass.current.on) LiquidSwitch(checked, enabled, onChange)
+            if (LocalUi.current.swIos) LiquidSwitch(checked, enabled, onChange)
             else Switch(checked = checked, enabled = enabled, onCheckedChange = {
                 onChange(it)
             })

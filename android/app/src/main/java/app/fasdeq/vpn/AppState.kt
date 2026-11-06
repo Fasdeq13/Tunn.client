@@ -247,7 +247,7 @@ class AppState(private val app: Application) {
 
     fun syncExternal() {
         val saved = VpnBridge.read(app)
-        val net = VpnBridge.vpnNetwork(app)
+        val net = VpnBridge.vpnNetwork(app) || (saved.first && VpnBridge.serviceRunning(app))
         val now = SystemClock.elapsedRealtime()
         if (status == Status.On) {
             if (net) {

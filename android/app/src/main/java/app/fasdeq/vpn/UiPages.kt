@@ -110,51 +110,89 @@ fun HexField(current: String, onValid: (String) -> Unit) {
 }
 
 @Composable
+private fun Tune(a: ComposeActivity, s: Snap, key: String, title: String, min: Float, max: Float, def: Float, unit: String = "", enabled: Boolean = true) {
+    val v = s.t(key, def)
+    SliderRow(title, v, min, max, "${v.toInt()}$unit", enabled) { a.set("tune.$key", it.toDouble()) }
+}
+
+@Composable
 fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Оформление", onBack) {
         Section("Стиль") {
-            SwitchRow("Liquid Glass", "Стекло как в iOS 26: размытие, преломление на кромках, блики. На Android 13+ настоящая линза на шейдере, на старых упрощённо. Цвета акцента не меняются", s.glass) { a.set("glass", it) }
+            SwitchRow("Liquid Glass", "Стекло как в iOS 26: размытие, преломление на кромках, блики. На Android 13+ настоящая линза на шейдере, на старых упрощённо", s.glass) { a.set("glass", it) }
+            ChoiceRow("Переключатели", listOf("Material", "iOS"), if (s.t("swStyle", 0f) > 0.5f) 1 else 0) { a.set("tune.swStyle", it.toDouble()) }
         }
-        if (s.glass) {
-            Section("Стекло") {
-                ChoiceRow("Тема", listOf("Система", "Светлая", "Тёмная"), s.theme) { a.set("theme", it) }
-                SliderRow("Степень стекла", s.glassLevel.toFloat(), 0f, 100f, if (s.glassLevel < 35) "матовое" else if (s.glassLevel < 70) "среднее" else "прозрачное") { a.set("glassLevel", it.toInt()) }
-            }
-            Section("Фон") {
-                BaseRow("Выбрать картинку", "Фото под стеклом. Сейчас: " + (if (s.glassBg != 0L) "своя картинка" else "стандартный фон"), onClick = {
-                    a.call("pickGlassBg") { r ->
-                        val e = r.optString("error")
-                        if (e.isNotEmpty()) a.say(e)
-                    }
-                })
-                if (s.glassBg != 0L) BaseRow("Вернуть стандартный фон", null, onClick = { a.call("clearGlassBg") })
+        Section("Тема") {
+            ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme, enabled = s.glass || !s.bgOn) { a.set("theme", it) }
+            if (!s.glass) {
+                ChoiceRow("Цвета", listOf("Системные", "Свои"), if (s.dynamic) 0 else 1, enabled = !s.bgOn) { a.set("dynamic", it == 0) }
+                SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled, enabled = !s.bgOn) { a.set("amoled", it) }
             }
         }
-        if (!s.glass) Section("Тема") {
-            ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme, enabled = !s.bgOn) { a.set("theme", it) }
-            ChoiceRow("Цвета", listOf("Системные", "Свои"), if (s.dynamic) 0 else 1, enabled = !s.bgOn) { a.set("dynamic", it == 0) }
-            SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled, enabled = !s.bgOn) { a.set("amoled", it) }
-        }
-        if (!s.glass) Section("Цвет акцента") {
-            Dim(!s.dynamic || s.bgOn) {
+        Section("Цвет акцента") {
+            if (s.glass) SwitchRow("Свой цвет акцента", "Выключено: синий, как в iOS", s.t("gAcc", 0f) > 0.5f) { a.set("tune.gAcc", if (it) 1.0 else 0.0) }
+            Dim(if (s.glass) true else (!s.dynamic || s.bgOn)) {
                 Column {
                     SwatchGrid(accents, s.accentHex) {
                         a.set("accentHex", it)
-                        a.set("dynamic", false)
+                        if (s.glass) a.set("tune.gAcc", 1.0) else a.set("dynamic", false)
                     }
                     HexField(s.accentHex) {
                         a.set("accentHex", it)
-                        a.set("dynamic", false)
+                        if (s.glass) a.set("tune.gAcc", 1.0) else a.set("dynamic", false)
                     }
                 }
             }
         }
-        if (!s.glass) Section("Фон") {
-            SwitchRow("Свой цвет фона", "Пока включён, тема, системные цвета и чёрный фон неактивны, но их значения сохраняются", s.bgOn) { a.set("bgCustom", it) }
-            if (s.bgOn) {
-                SwatchGrid(backgrounds, s.bgHex) { a.set("bgHex", it) }
-                HexField(s.bgHex) { a.set("bgHex", it) }
+        Section("Фон") {
+            BaseRow("Своя картинка", "Под всем приложением, в том числе на экране VPN. Сейчас: " + (if (s.glassBg != 0L) "своя картинка" else if (s.glass) "стандартный фон" else "нет"), onClick = {
+                a.call("pickGlassBg") { r ->
+                    val e = r.optString("error")
+                    if (e.isNotEmpty()) a.say(e)
+                }
+            })
+            if (s.glassBg != 0L) BaseRow("Убрать картинку", null, onClick = { a.call("clearGlassBg") })
+            if (s.glassBg != 0L || s.glass) {
+                Tune(a, s, "bgDim", "Затемнение фона", 0f, 100f, 0f, "%")
+                Tune(a, s, "bgBlur", "Размытие фона", 0f, 100f, 0f, "%")
             }
+            if (!s.glass) {
+                SwitchRow("Свой цвет фона", "Пока включён, тема, системные цвета и чёрный фон неактивны, но их значения сохраняются", s.bgOn) { a.set("bgCustom", it) }
+                if (s.bgOn) {
+                    SwatchGrid(backgrounds, s.bgHex) { a.set("bgHex", it) }
+                    HexField(s.bgHex) { a.set("bgHex", it) }
+                }
+            }
+        }
+        if (s.glass) {
+            Section("Стекло") {
+                Tune(a, s, "gBlur", "Размытие под стеклом", 0f, 100f, 50f, "%")
+                SliderRow("Степень стекла", s.glassLevel.toFloat(), 0f, 100f, if (s.glassLevel < 35) "матовое" else if (s.glassLevel < 70) "среднее" else "прозрачное") { a.set("glassLevel", it.toInt()) }
+                Tune(a, s, "gTint", "Плотность подложки", 0f, 100f, 50f, "%")
+                Tune(a, s, "gSat", "Насыщенность фона", 0f, 250f, 155f, "%")
+            }
+            Section("Линза и свет") {
+                Tune(a, s, "gRefr", "Преломление", 0f, 200f, 100f, "%")
+                Tune(a, s, "gEdge", "Ширина кромки", 4f, 40f, 18f, " dp")
+                Tune(a, s, "gDisp", "Цветовая дисперсия", 0f, 200f, 100f, "%")
+                Tune(a, s, "gSpec", "Блики и свечение", 0f, 200f, 100f, "%")
+            }
+            Section("Слияние и капли") {
+                Tune(a, s, "gMerge", "Дистанция слияния панелей", 0f, 30f, 10f, " dp")
+                Tune(a, s, "gDrop", "Сила линзы капли", 50f, 250f, 100f, "%")
+            }
+        } else {
+            Section("Material You") {
+                ChoiceRow("Стиль карточек", listOf("Тональные", "Контурные", "Плоские"), s.t("cardStyle", 0f).toInt()) { a.set("tune.cardStyle", it.toDouble()) }
+                Tune(a, s, "mSat", "Насыщенность цвета", 0f, 200f, 100f, "%", enabled = !s.dynamic && !s.bgOn)
+                Tune(a, s, "mSurf", "Контраст поверхностей", 0f, 250f, 100f, "%", enabled = !s.dynamic && !s.bgOn)
+            }
+        }
+        Section("Форма и размеры") {
+            Tune(a, s, "uiRadius", "Скругление", 40f, 160f, 100f, "%")
+            Tune(a, s, "uiSpace", "Отступы", 60f, 170f, 100f, "%")
+            Tune(a, s, "uiFont", "Размер текста", 80f, 130f, 100f, "%")
+            BaseRow("Сбросить тонкую настройку", "Вернуть все эти ползунки к значениям по умолчанию", onClick = { a.set("tune", org.json.JSONObject()) })
         }
         Section("Кнопка питания") {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
@@ -177,6 +215,11 @@ fun ConnectPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -
     SubPage("Подключение", onBack) {
         Section("Основное") {
             SwitchRow("Подключаться при запуске", null, s.autoConnect) { a.set("autoConnect", it) }
+            BaseRow(
+                "Работа в фоне",
+                "Если VPN сам отключается через время (Tecno, Xiaomi, Huawei, Samsung): разрешите Tunn работать без ограничений батареи и закрепите приложение в списке недавних",
+                onClick = { a.call("batterySettings") }
+            )
             ChoiceRow("DNS", DnsPresets.names, s.dns) { a.set("dns", it) }
             if (s.dns == 4) TextRow("Свои DNS через запятую", s.dnsCustom, "1.1.1.1, 8.8.8.8") { a.set("dnsCustom", it) }
             SwitchRow(
@@ -320,7 +363,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.10 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 3.11 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -334,7 +377,6 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         Section("Участники") {
             BaseRow("Fasdeq13", "Создатель", { a.call("open", "https://github.com/Fasdeq13/FasdeqVPN") })
             BaseRow("montik")
-            BaseRow("utowike")
         }
         Section("Официальный канал") {
             BaseRow("Tunn в Telegram", "t.me/Tunn_client", { a.call("open", "https://t.me/Tunn_client") }, leading = {

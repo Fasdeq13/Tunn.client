@@ -270,6 +270,23 @@ class WebBridge(private val host: BaseUiActivity) {
                 reply(id)
                 push()
             }
+            "batterySettings" -> {
+                try {
+                    host.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (e: Throwable) {
+                    try {
+                        host.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } catch (e2: Throwable) {
+                    }
+                }
+                reply(id)
+            }
             "pickGlassBg" -> host.pickImage { uri ->
                 if (uri == null) {
                     reply(id, JSONObject().put("cancel", true))
