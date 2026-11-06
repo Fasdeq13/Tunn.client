@@ -1,0 +1,1 @@
+3.12: support for the fm (TLS fragment) link parameter; Fluent (Windows 11) theme; start switch instead of the button like Karing; Fluent switches.

@@ -68,7 +68,7 @@ fun Snap.glassParams() = GlassParams(
     t("gSpec", 100f), t("gSat", 155f), t("gMerge", 10f), t("gDrop", 100f)
 )
 
-class UiTune(val radius: Float = 1f, val space: Float = 1f, val swIos: Boolean = false, val card: Int = 0)
+class UiTune(val radius: Float = 1f, val space: Float = 1f, val sw: Int = 0, val card: Int = 0, val fluent: Boolean = false)
 
 val LocalUi = compositionLocalOf { UiTune() }
 

@@ -20,6 +20,11 @@ object SingBox {
         return s.optJSONArray("servers")?.optJSONObject(0) ?: JSONObject()
     }
 
+    private fun hasFragment(stream: JSONObject): Boolean {
+        val tcp = stream.optJSONObject("finalmask")?.optJSONArray("tcp") ?: return false
+        return (0 until tcp.length()).any { tcp.optJSONObject(it)?.optString("type") == "fragment" }
+    }
+
     private fun tls(stream: JSONObject?): JSONObject? {
         if (stream == null) return null
         val sec = stream.optString("security", "none")
@@ -32,6 +37,7 @@ object SingBox {
             if (alpn != null && alpn.length() > 0) o.put("alpn", alpn)
             val fp = t.optString("fingerprint")
             if (fp.isNotEmpty()) o.put("utls", JSONObject().put("enabled", true).put("fingerprint", fp))
+            if (hasFragment(stream)) o.put("fragment", true)
             return o
         }
         if (sec == "reality") {
@@ -41,6 +47,7 @@ object SingBox {
                 .put("server_name", r.optString("serverName"))
                 .put("utls", JSONObject().put("enabled", true).put("fingerprint", r.optString("fingerprint", "chrome").ifEmpty { "chrome" }))
                 .put("reality", JSONObject().put("enabled", true).put("public_key", r.optString("publicKey", r.optString("password"))).put("short_id", r.optString("shortId")))
+                .also { if (hasFragment(stream)) it.put("fragment", true) }
         }
         return null
     }

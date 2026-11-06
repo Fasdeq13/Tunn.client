@@ -118,13 +118,27 @@ private fun Tune(a: ComposeActivity, s: Snap, key: String, title: String, min: F
 @Composable
 fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Оформление", onBack) {
+        val fluentOn = !s.glass && s.t("fluent", 0f) > 0.5f
         Section("Стиль") {
-            SwitchRow("Liquid Glass", "Стекло как в iOS 26: размытие, преломление на кромках, блики. На Android 13+ настоящая линза на шейдере, на старых упрощённо", s.glass) { a.set("glass", it) }
-            ChoiceRow("Переключатели", listOf("Material", "iOS"), if (s.t("swStyle", 0f) > 0.5f) 1 else 0) { a.set("tune.swStyle", it.toDouble()) }
+            ChoiceRow("Оформление", listOf("Material You", "Liquid Glass", "Fluent"), if (s.glass) 1 else if (fluentOn) 2 else 0) {
+                a.set("glass", it == 1)
+                a.set("tune.fluent", if (it == 2) 1.0 else 0.0)
+            }
+            Text(
+                when {
+                    s.glass -> "Стекло как в iOS 26: размытие, преломление на кромках, блики. На Android 13+ настоящая линза на шейдере, на старых упрощённо."
+                    fluentOn -> "Как в Windows 11: матовый фон Mica, плоские карточки с тонкой обводкой, малые скругления."
+                    else -> "Material You: цвета из обоев или свои."
+                },
+                Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ChoiceRow("Переключатели", listOf("Material", "iOS", "Fluent"), s.t("swStyle", if (fluentOn) 2f else 0f).toInt()) { a.set("tune.swStyle", it.toDouble()) }
+            ChoiceRow("Запуск VPN", listOf("Кнопка", "Переключатель"), if (s.t("startStyle", 0f) > 0.5f) 1 else 0) { a.set("tune.startStyle", it.toDouble()) }
         }
         Section("Тема") {
             ChoiceRow("Режим", listOf("Система", "Светлая", "Тёмная"), s.theme, enabled = s.glass || !s.bgOn) { a.set("theme", it) }
-            if (!s.glass) {
+            if (!s.glass && !fluentOn) {
                 ChoiceRow("Цвета", listOf("Системные", "Свои"), if (s.dynamic) 0 else 1, enabled = !s.bgOn) { a.set("dynamic", it == 0) }
                 SwitchRow("Чёрный фон", "Для OLED-экранов в тёмной теме", s.amoled, enabled = !s.bgOn) { a.set("amoled", it) }
             }
@@ -363,7 +377,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.11 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 3.12 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }

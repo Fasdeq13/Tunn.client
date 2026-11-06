@@ -76,6 +76,7 @@ object XrayJson {
             rl.optString("spiderX").takeIf { it.isNotEmpty() }?.let { q.add("spx" to it) }
             rl.optString("mldsa65Verify").takeIf { it.isNotEmpty() }?.let { q.add("pqv" to it) }
         }
+        ss.optJSONObject("finalmask")?.let { q.add("fm" to it.toString()) }
         when (net) {
             "ws" -> {
                 val w = ss.optJSONObject("wsSettings") ?: JSONObject()

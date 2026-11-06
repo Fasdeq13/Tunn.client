@@ -13,8 +13,8 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 32
-        versionName = (project.findProperty("app.vname") as String?) ?: "3.11"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 33
+        versionName = (project.findProperty("app.vname") as String?) ?: "3.12"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {

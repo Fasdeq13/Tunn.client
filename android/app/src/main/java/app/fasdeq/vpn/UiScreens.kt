@@ -341,16 +341,26 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
         }
     }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        PowerButton(s.status, btn, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {
-            when (s.status) {
-                "Off" -> a.requestConnect()
-                "On" -> a.call("disconnect")
-                else -> Unit
+        if (s.t("startStyle", 0f) > 0.5f) {
+            StartSwitchCard(s.status, label, sel?.name ?: "Сервер не выбран") {
+                when (s.status) {
+                    "Off" -> a.requestConnect()
+                    "On", "Connecting" -> a.call("disconnect")
+                    else -> Unit
+                }
             }
-        }
-        Spacer(Modifier.height(10.dp))
-        Crossfade(label, animationSpec = tween(300), label = "status") {
-            Text(it, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        } else {
+            PowerButton(s.status, btn, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {
+                when (s.status) {
+                    "Off" -> a.requestConnect()
+                    "On" -> a.call("disconnect")
+                    else -> Unit
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Crossfade(label, animationSpec = tween(300), label = "status") {
+                Text(it, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            }
         }
         AnimatedVisibility(!compact, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -592,7 +602,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.11, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.12, создатели, канал") { go("about") }
     }
 }
 

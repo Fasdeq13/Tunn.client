@@ -13,6 +13,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -132,7 +133,8 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
     if (bg != null) dark = lum(bg) <= 0.55f
     val custom = parseHex(s.accentHex)
     val wall = s.glass || s.glassBg != 0L
-    var scheme: ColorScheme = if (s.glass) glassScheme(dark, if (s.t("gAcc", 0f) > 0.5f) custom else null) else if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
+    val fluent = !s.glass && s.t("fluent", 0f) > 0.5f
+    var scheme: ColorScheme = if (fluent) fluentScheme(dark, if (!s.dynamic) custom else null) else if (s.glass) glassScheme(dark, if (s.t("gAcc", 0f) > 0.5f) custom else null) else if (s.dynamic && bg == null && Build.VERSION.SDK_INT >= 31) {
         var d = if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         if (dark && s.amoled) {
             d = d.copy(
@@ -145,7 +147,10 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
         accentScheme(custom ?: Color(0xFF4FD8C8), dark, bg, dark && s.amoled, s.t("mSat", 100f) / 100f, s.t("mSurf", 100f) / 100f)
     }
     if (wall && !s.glass) scheme = scheme.copy(background = Color.Transparent, surface = Color.Transparent)
-    val ui = UiTune(s.t("uiRadius", 100f) / 100f, s.t("uiSpace", 100f) / 100f, s.t("swStyle", 0f) > 0.5f, s.t("cardStyle", 0f).toInt())
+    val ui = UiTune(
+        s.t("uiRadius", 100f) / 100f * (if (fluent) 0.36f else 1f), s.t("uiSpace", 100f) / 100f,
+        s.t("swStyle", if (fluent) 2f else 0f).toInt(), s.t("cardStyle", 0f).toInt(), fluent
+    )
     val inner: @Composable () -> Unit = {
         val d = androidx.compose.ui.platform.LocalDensity.current
         androidx.compose.runtime.CompositionLocalProvider(
@@ -169,6 +174,28 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
             extraLarge = RoundedCornerShape(34.dp)
         ),
         content = inner
+    )
+}
+
+fun fluentScheme(dark: Boolean, accent: Color?): ColorScheme {
+    val acc = accent ?: if (dark) Color(0xFF60CDFF) else Color(0xFF0067C0)
+    val onAcc = if (dark) Color(0xFF003250) else Color.White
+    val bg = if (dark) Color(0xFF202020) else Color(0xFFF3F3F3)
+    val card = if (dark) Color(0xFF2B2B2B) else Color(0xFFFBFBFB)
+    val high = if (dark) Color(0xFF323232) else Color(0xFFFFFFFF)
+    val fg = if (dark) Color.White else Color(0xFF1A1A1A)
+    val soft = if (dark) Color(0xFFC8C8C8) else Color(0xFF5E5E5E)
+    val stroke = if (dark) Color(0xFF3D3D3D) else Color(0xFFE0E0E0)
+    val tintC = lerp(card, acc, if (dark) 0.22f else 0.14f)
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = acc, onPrimary = onAcc, primaryContainer = tintC, onPrimaryContainer = fg,
+        secondary = acc, secondaryContainer = tintC, onSecondaryContainer = fg, tertiary = acc,
+        background = bg, onBackground = fg, surface = bg, onSurface = fg,
+        surfaceVariant = card, onSurfaceVariant = soft,
+        surfaceContainerLowest = bg, surfaceContainerLow = bg, surfaceContainer = card, surfaceContainerHigh = high, surfaceContainerHighest = high,
+        outline = stroke, outlineVariant = stroke,
+        error = if (dark) Color(0xFFFF99A4) else Color(0xFFC42B1C)
     )
 }
 

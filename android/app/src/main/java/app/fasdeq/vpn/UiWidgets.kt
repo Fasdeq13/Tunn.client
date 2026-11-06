@@ -61,8 +61,8 @@ fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
         val glassOn = LocalGlass.current.on
         Surface(
             shape = sh,
-            color = if (glassOn || cardStyle != 0) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
-            border = if (!glassOn && cardStyle == 1) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+            color = if (glassOn || (cardStyle != 0 && !LocalUi.current.fluent)) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
+            border = if (!glassOn && (cardStyle == 1 || LocalUi.current.fluent)) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
             modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass(sh)
         ) {
             Column(Modifier.padding(vertical = if (glassOn) sp(8) else sp(4)), content = content)
@@ -116,7 +116,8 @@ fun SwitchRow(title: String, sub: String? = null, checked: Boolean, enabled: Boo
         title, sub, enabled = enabled,
         onClick = { onChange(!checked) },
         trailing = {
-            if (LocalUi.current.swIos) LiquidSwitch(checked, enabled, onChange)
+            if (LocalUi.current.sw == 1) LiquidSwitch(checked, enabled, onChange)
+            else if (LocalUi.current.sw == 2) FluentSwitch(checked, enabled, onChange)
             else Switch(checked = checked, enabled = enabled, onCheckedChange = {
                 onChange(it)
             })

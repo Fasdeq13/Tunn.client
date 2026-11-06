@@ -503,6 +503,21 @@ object Links {
                     .put("spiderX", p["spx"] ?: "")
             )
         }
+        val fm = p["fm"] ?: ""
+        if (fm.isNotEmpty()) {
+            try {
+                val o = JSONObject(fm)
+                val tcp = o.optJSONArray("tcp")
+                if (tcp != null) {
+                    for (i in 0 until tcp.length()) {
+                        val st = tcp.optJSONObject(i)?.optJSONObject("settings") ?: continue
+                        if (st.has("interval") && !st.has("delay")) st.put("delay", st.get("interval"))
+                    }
+                }
+                s.put("finalmask", o)
+            } catch (e: Exception) {
+            }
+        }
         return s
     }
 

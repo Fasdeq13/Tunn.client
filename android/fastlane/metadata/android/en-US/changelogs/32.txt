@@ -1,1 +1,0 @@
-3.11: Liquid Glass and fine appearance tuning, iOS switches in any theme, custom accent and background; fixed VPN dropping by itself on Tecno and similar firmwares; fast on/off no longer breaks connecting.

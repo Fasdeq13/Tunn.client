@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -142,5 +143,61 @@ fun LiquidSwitch(checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit
                 )
                 .border(0.6.dp, Color.Black.copy(alpha = 0.08f), CircleShape)
         )
+    }
+}
+
+
+@Composable
+fun FluentSwitch(checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val prog = remember { Animatable(if (checked) 1f else 0f) }
+    var pressed by remember { mutableStateOf(false) }
+    LaunchedEffect(checked) { prog.animateTo(if (checked) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 700f)) }
+    val knob by animateDpAsState(if (pressed) 16.dp else 12.dp, spring(0.8f, 700f), label = "knob")
+    val accent = MaterialTheme.colorScheme.primary
+    val outline = MaterialTheme.colorScheme.onSurfaceVariant
+    val onKnob = MaterialTheme.colorScheme.onPrimary
+    val p = prog.value.coerceIn(0f, 1f)
+    Box(
+        Modifier.size(44.dp, 22.dp)
+            .alpha(if (enabled) 1f else 0.45f)
+            .background(lerp(Color.Transparent, accent, p), CircleShape)
+            .border(1.dp, lerp(outline, accent, p), CircleShape)
+            .pointerInput(checked, enabled) {
+                detectTapGestures(onPress = { pressed = true; tryAwaitRelease(); pressed = false }, onTap = { if (enabled) onChange(!checked) })
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        val free = 44.dp - knob - 8.dp
+        Box(
+            Modifier.offset(x = 4.dp + free * p).size(knob)
+                .background(lerp(outline, onKnob, p), CircleShape)
+        )
+    }
+}
+
+@Composable
+fun StartSwitchCard(status: String, title: String, server: String, onToggle: () -> Unit) {
+    val busy = status == "Connecting" || status == "Stopping"
+    val on = status == "On" || status == "Connecting"
+    val sh = RoundedCornerShape(cr(28))
+    val glassOn = LocalGlass.current.on
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).glass(sh)
+            .background(if (glassOn) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer, sh)
+            .padding(horizontal = 22.dp, vertical = sp(22)),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(server, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        Box(Modifier.padding(start = 12.dp).graphicsLayer(scaleX = 1.45f, scaleY = 1.45f).padding(end = 6.dp)) {
+            when (LocalUi.current.sw) {
+                1 -> LiquidSwitch(on, !busy) { onToggle() }
+                2 -> FluentSwitch(on, !busy) { onToggle() }
+                else -> androidx.compose.material3.Switch(checked = on, enabled = !busy, onCheckedChange = { onToggle() })
+            }
+        }
     }
 }
