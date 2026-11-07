@@ -1322,12 +1322,12 @@ class AppState(private val app: Application) {
     var autoReconnect by mutableStateOf(prefs.getBoolean("auto_reconnect", true))
         private set
 
-    fun setAutoFailover(v: Boolean) {
+    fun changeAutoFailover(v: Boolean) {
         autoFailover = v
         prefs.edit().putBoolean("auto_failover", v).apply()
     }
 
-    fun setAutoReconnect(v: Boolean) {
+    fun changeAutoReconnect(v: Boolean) {
         autoReconnect = v
         prefs.edit().putBoolean("auto_reconnect", v).apply()
     }
