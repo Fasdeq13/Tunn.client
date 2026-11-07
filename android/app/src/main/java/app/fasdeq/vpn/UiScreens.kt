@@ -502,6 +502,9 @@ private fun GroupHead(r: Row2.Head, local: String, folded: Boolean, modifier: Mo
                 if (g.expire > 0) parts.add("до " + fmtDate(g.expire))
                 Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
+            if (g != null && g.announce.isNotBlank()) {
+                Text(g.announce, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
         }
         IconButton(more, Modifier.size(36.dp)) { Icon(painterResource(R.drawable.ic_more), null, Modifier.size(20.dp)) }
     }
@@ -600,9 +603,10 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_apps, "Плагины и ядра", "sing-box, Xray, WireGuard, свои плагины") { go("plugins") }
         CategoryRow(R.drawable.ic_apps, "Компоненты", if (s.dist == "full") "sing-box, Xray, AmneziaWG: версии" else "Скачать sing-box, Xray, AmneziaWG") { go("components") }
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
+        CategoryRow(R.drawable.ic_refresh, "Журнал и диагностика", "Переподключение, автовыбор, журнал подключения") { go("journal") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 3.12, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.0, создатели, канал") { go("about") }
     }
 }
 
@@ -616,6 +620,7 @@ fun SettingsPage(a: ComposeActivity, s: Snap, page: String, open: (Sheet) -> Uni
         "ping" -> PingPage(a, s, onBack)
         "subs" -> SubsPage(a, s, open, onBack)
         "updates" -> UpdatesPage(a, s, onBack)
+        "journal" -> JournalPage(a, s, onBack)
         else -> AboutPage(a, onBack)
     }
 }

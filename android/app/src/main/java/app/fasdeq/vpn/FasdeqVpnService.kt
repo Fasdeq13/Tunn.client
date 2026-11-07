@@ -381,9 +381,11 @@ class FasdeqVpnService : VpnService() {
                     healthWatch(gen) { null }
                     VpnBridge.write(this, true, serverId)
                     VpnBridge.send(this, true, null)
+                    J.i("svc", "up: ${serverName} engine=${params.engine} retry=$retries")
                     getSystemService(NotificationManager::class.java)
                         .notify(NOTIFICATION_ID, buildNotification(true))
                 } catch (e: Throwable) {
+                    J.e("svc", "start failed: ${e.message}")
                     closeCore(1500)
                     if (isRetry && !userStop && retries < MAX_RETRIES) {
                         recover(e.message ?: "Не удалось запустить")
@@ -493,6 +495,7 @@ class FasdeqVpnService : VpnService() {
         acquireWake()
         VpnBridge.write(this, true, serverId)
         VpnBridge.send(this, true, null)
+        J.i("svc", "up (awg): ${serverName}")
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(true))
     }
 
@@ -610,7 +613,7 @@ class FasdeqVpnService : VpnService() {
             var stuck = 0
             try {
                 while (gen == generation && !stopping && !halted && !userStop) {
-                    Thread.sleep(if (bad > 0 || stuck > 0) 15_000L else 45_000L)
+                    Thread.sleep(if (bad > 0 || stuck > 0) 8_000L else if (childPort <= 0) 15_000L else 40_000L)
                     if (gen != generation || stopping || halted || userStop) return@Thread
                     val port = childPort
                     var ok = true
@@ -620,7 +623,9 @@ class FasdeqVpnService : VpnService() {
                         val v = stats() ?: continue
                         val rx = v.optLong("rx", 0L)
                         val tx = v.optLong("tx", 0L)
-                        if (lastRx >= 0 && tx - lastTx > 2048 && rx - lastRx < 64) stuck++ else stuck = 0
+                        if (lastRx >= 0 && tx - lastTx > 1024 && rx - lastRx < 64) stuck++ else stuck = 0
+                        val hs = v.optLong("hs", 0L)
+                        if (hs > 0L && lastTx >= 0 && tx - lastTx > 1024 && System.currentTimeMillis() / 1000 - hs > 200L) stuck += 2
                         lastRx = rx
                         lastTx = tx
                         ok = stuck < 4
@@ -631,8 +636,8 @@ class FasdeqVpnService : VpnService() {
                         if (port > 0) stuck = 0
                     } else if (++bad >= 3 || (port <= 0 && stuck >= 4)) {
                         if (retries >= MAX_RETRIES) {
-                            bad = 0
-                            stuck = 0
+                            halt("Туннель не отвечает после нескольких перезапусков")
+                            return@Thread
                         } else {
                             recover("Туннель перестал отвечать, переподключаюсь")
                             return@Thread
@@ -750,6 +755,7 @@ class FasdeqVpnService : VpnService() {
     }
 
     private fun recover(message: String) {
+        J.w("svc", "recover #${retries + 1}: $message")
         val params = lastParams
         if (connectedMono > 0L && SystemClock.elapsedRealtime() - connectedMono > 60_000L) retries = 0
         if (params == null || userStop || halted || retries >= MAX_RETRIES) {
@@ -793,6 +799,7 @@ class FasdeqVpnService : VpnService() {
         }
         val mine = epoch
         stopping = true
+        J.w("svc", "halt: ${message ?: "stop"} userStop=$userStop")
         VpnBridge.write(this, false, null)
         VpnBridge.send(this, false, message)
         releaseWake()
@@ -807,7 +814,8 @@ class FasdeqVpnService : VpnService() {
             } catch (e: Throwable) {
             }
             if (mine == epoch) {
-                if (userStop) Process.killProcess(Process.myPid()) else stopSelf()
+                try { stopSelf() } catch (e: Throwable) {}
+                Process.killProcess(Process.myPid())
             }
         }.start()
     }
@@ -842,6 +850,6 @@ class FasdeqVpnService : VpnService() {
         private const val CHANNEL = "vpn_state_quiet"
         private const val NOTIFICATION_ID = 1
         private const val MAX_RETRIES = 4
-        private val RETRY_DELAYS = longArrayOf(1500L, 3000L, 6000L, 10000L)
+        private val RETRY_DELAYS = longArrayOf(400L, 1000L, 2000L, 3500L)
     }
 }

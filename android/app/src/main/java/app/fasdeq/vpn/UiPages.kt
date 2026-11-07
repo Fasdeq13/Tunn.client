@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.json.JSONObject
 
 private val accents = listOf(
@@ -378,7 +379,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.13 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 4.0 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -605,5 +606,35 @@ fun ThemePacks(a: ComposeActivity) {
             }
         }, Modifier.padding(horizontal = 12.dp)) { Text("Установить тему из файла…") }
         if (msg.isNotEmpty()) Text(msg, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+
+@androidx.compose.runtime.Composable
+fun JournalPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var text by remember { mutableStateOf(J.read(500)) }
+    SubPage("Журнал и диагностика", onBack) {
+        Section("Подключение") {
+            SwitchRow("Автопереподключение", "Если туннель оборвался сам, поднять его заново (не чаще 4 раз за 5 минут)", s.autoReconnect) { a.set("autoReconnect", it) }
+            SwitchRow("Запасной сервер", "Если сервер не отвечает после повторов, перейти на лучший по пингу", s.autoFailover) { a.set("autoFailover", it) }
+        }
+        Section("Журнал") {
+            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton({ text = J.read(500) }) { Text("Обновить") }
+                TextButton({
+                    val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Tunn journal", text))
+                    a.say("Журнал скопирован")
+                }) { Text("Копировать") }
+                TextButton({ J.clear(); text = "" }) { Text("Очистить") }
+            }
+            Text(
+                text.ifBlank { "Пока пусто. Записи появятся при подключении." },
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

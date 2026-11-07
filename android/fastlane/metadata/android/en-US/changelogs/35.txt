@@ -1,0 +1,1 @@
+4.0: Rust connection policy (retries, failover, journal); server switch restarts the VPN process; pings and service checks persist; balancer configs expand into nodes; subscription headers (announce, support, update interval); Journal page; theme plugins; C library.

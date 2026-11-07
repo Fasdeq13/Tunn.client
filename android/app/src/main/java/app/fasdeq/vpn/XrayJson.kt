@@ -25,8 +25,11 @@ object XrayJson {
         }
         val links = ArrayList<String>()
         for (c in configs) {
-            val l = try { link(c) } catch (e: Exception) { null }
-            if (l != null) links.add(l)
+            for (ob in nodes(c)) {
+                val tag = ob.optString("tag")
+                val l = try { link(c, ob, if (nodes(c).size > 1) tag else "") } catch (e: Exception) { null }
+                if (l != null) links.add(l)
+            }
         }
         if (links.isEmpty()) return Prepared(emptyList(), "В конфигах нет поддерживаемых серверов")
         return Prepared(links.distinct().map { Source(it, false) }, null)
@@ -48,11 +51,24 @@ object XrayJson {
         return any
     }
 
-    private fun link(cfg: JSONObject): String? {
-        val ob = pick(cfg) ?: return null
+    private fun nodes(cfg: JSONObject): List<JSONObject> {
+        val list = cfg.optJSONArray("outbounds") ?: return emptyList()
+        val ok = ArrayList<JSONObject>()
+        for (i in 0 until list.length()) {
+            val o = list.optJSONObject(i) ?: continue
+            if (o.optString("protocol").lowercase() !in protocols) continue
+            if (o.optString("tag") == "proxy") return listOf(o)
+            ok.add(o)
+        }
+        return if (ok.size <= 16) ok else ok.take(16)
+    }
+
+    private fun link(cfg: JSONObject, picked: JSONObject? = null, suffix: String = ""): String? {
+        val ob = picked ?: pick(cfg) ?: return null
         val proto = ob.optString("protocol").lowercase()
         val st = ob.optJSONObject("settings") ?: JSONObject()
-        val name = cfg.optString("remarks").ifBlank { cfg.optString("ps").ifBlank { cfg.optString("name").ifBlank { ob.optString("tag") } } }
+        val base = cfg.optString("remarks").ifBlank { cfg.optString("ps").ifBlank { cfg.optString("name").ifBlank { ob.optString("tag") } } }
+        val name = if (suffix.isNotEmpty() && suffix != base) "$base · $suffix" else base
         val ss = ob.optJSONObject("streamSettings") ?: JSONObject()
         var net = ss.optString("network", "tcp").lowercase()
         if (net == "splithttp") net = "xhttp"

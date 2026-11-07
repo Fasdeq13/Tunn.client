@@ -10,6 +10,7 @@ class FasdeqApp : Application() {
     override fun onCreate() {
         super.onCreate()
         appContext = this
+        J.init(this)
         val main = currentProcess() == packageName
         if (main) {
             state = AppState(this)

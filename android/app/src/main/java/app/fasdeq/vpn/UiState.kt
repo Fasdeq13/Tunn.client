@@ -14,7 +14,7 @@ data class SrvUi(
     val ver: String
 )
 
-data class GroupUi(val name: String, val url: String, val used: Long, val total: Long, val expire: Long)
+data class GroupUi(val name: String, val url: String, val used: Long, val total: Long, val expire: Long, val announce: String = "", val support: String = "", val web: String = "", val hours: Float = 0f)
 
 data class PingUi(val ms: Int?, val busy: Boolean)
 
@@ -86,6 +86,8 @@ data class Snap(
     val glass: Boolean = false,
     val glassLevel: Int = 55,
     val glassBg: Long = 0L,
+    val autoFailover: Boolean = true,
+    val autoReconnect: Boolean = true,
     val tune: Map<String, Float> = emptyMap(),
     val autoConnect: Boolean = false,
     val dns: Int = 0,
@@ -186,7 +188,7 @@ fun parseSnap(json: String): Snap {
     val ga = o.optJSONArray("groups") ?: JSONArray()
     for (i in 0 until ga.length()) {
         val g = ga.getJSONObject(i)
-        groups.add(GroupUi(g.optString("name"), g.optString("url"), g.optLong("used"), g.optLong("total", -1), g.optLong("expire")))
+        groups.add(GroupUi(g.optString("name"), g.optString("url"), g.optLong("used"), g.optLong("total", -1), g.optLong("expire"), g.optString("announce"), g.optString("support"), g.optString("web"), g.optDouble("hours", 0.0).toFloat()))
     }
     val collapsed = HashSet<String>()
     val ca = o.optJSONArray("collapsed") ?: JSONArray()
@@ -247,6 +249,8 @@ fun parseSnap(json: String): Snap {
         glass = st.optBoolean("glass"),
         glassLevel = st.optInt("glassLevel", 55),
         glassBg = st.optLong("glassBg"),
+        autoFailover = st.optBoolean("autoFailover", true),
+        autoReconnect = st.optBoolean("autoReconnect", true),
         tune = st.optJSONObject("tune")?.let { o -> o.keys().asSequence().associateWith { k -> o.optDouble(k).toFloat() } } ?: emptyMap(),
         autoConnect = st.optBoolean("autoConnect"),
         dns = st.optInt("dns"),

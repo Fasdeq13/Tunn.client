@@ -100,10 +100,8 @@ class WebBridge(private val host: BaseUiActivity) {
             "select" -> {
                 val target = app.servers.firstOrNull { it.id == text }
                 val why = if (target == null) null else blockedFor(target.conf, target.id)
-                if (why != null) reply(id, JSONObject().put("error", why)) else {
-                    app.select(text)
-                    reply(id)
-                }
+                app.select(text)
+                if (why != null) reply(id, JSONObject().put("error", why)) else reply(id)
             }
             "remove" -> {
                 app.servers.firstOrNull { it.id == text }?.let { app.remove(it) }
@@ -476,6 +474,8 @@ class WebBridge(private val host: BaseUiActivity) {
             "amoled" -> st.changeAmoled(bool(v))
             "glass" -> st.changeGlass(bool(v))
             "glassLevel" -> st.changeGlassLevel(int(v))
+            "autoFailover" -> st.setAutoFailover(bool(v))
+            "autoReconnect" -> st.setAutoReconnect(bool(v))
             "autoConnect" -> st.changeAutoConnect(bool(v))
             "dns" -> st.changeDnsPreset(int(v))
             "dnsCustom" -> st.changeDnsCustom(v as? String ?: "")
@@ -645,7 +645,7 @@ class WebBridge(private val host: BaseUiActivity) {
         }
         o.put("servers", servers)
         val groups = JSONArray()
-        for (g in st.groups) groups.put(JSONObject().put("name", g.name).put("url", g.url).put("used", g.used).put("total", g.total).put("expire", g.expire))
+        for (g in st.groups) groups.put(JSONObject().put("name", g.name).put("url", g.url).put("used", g.used).put("total", g.total).put("expire", g.expire).put("announce", g.announce).put("support", g.support).put("web", g.web).put("hours", g.hours.toDouble()))
         o.put("groups", groups)
         o.put("collapsed", try { JSONArray(FasdeqApp.appContext.getSharedPreferences("fasdeq", Context.MODE_PRIVATE).getString("collapsed", "[]")) } catch (e: Exception) { JSONArray() })
         val pings = JSONObject()
@@ -666,6 +666,8 @@ class WebBridge(private val host: BaseUiActivity) {
         settings.put("amoled", st.amoled)
         settings.put("glass", st.glass)
         settings.put("glassLevel", st.glassLevel)
+        settings.put("autoFailover", st.autoFailover)
+        settings.put("autoReconnect", st.autoReconnect)
         settings.put("glassBg", st.glassBg)
         settings.put("autoConnect", st.autoConnect)
         settings.put("dns", st.dnsPreset)

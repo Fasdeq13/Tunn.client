@@ -50,7 +50,11 @@ data class Group(
     val url: String,
     val used: Long = 0,
     val total: Long = -1,
-    val expire: Long = 0
+    val expire: Long = 0,
+    val announce: String = "",
+    val support: String = "",
+    val web: String = "",
+    val hours: Float = 0f
 )
 
 object DnsPresets {
@@ -183,6 +187,24 @@ class AppState(private val app: Application) {
         servers.addAll(load())
         groups.addAll(loadGroups())
         loadChecks()
+        loadPings()
+        scope.launch {
+            delay(5000)
+            for (g in groups.toList()) {
+                if (g.url.isBlank() || g.hours <= 0f) continue
+                val key = "grp_upd:" + g.name
+                if (System.currentTimeMillis() - prefs.getLong(key, 0L) < (g.hours * 3_600_000f).toLong()) continue
+                try {
+                    refreshGroup(g.name)
+                    prefs.edit().putLong(key, System.currentTimeMillis()).apply()
+                    J.i("sub", "refreshed ${g.name}")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    J.w("sub", "refresh ${g.name} failed: ${e.message}")
+                }
+            }
+        }
         if (servers.none { it.id == selectedId }) selectedId = servers.firstOrNull()?.id
         if (SharedStore.read(app) == null) save() else reloadShared()
         refreshCores()
@@ -300,7 +322,7 @@ class AppState(private val app: Application) {
     }
 
     private fun loadChecks() {
-        val raw = prefs.getString("checks", null) ?: return
+        val raw = prefs.getString("checks", null) ?: try { checksFile().takeIf { it.exists() }?.readText() } catch (e: Exception) { null } ?: return
         try {
             val obj = JSONObject(raw)
             val ids = servers.map { it.id }.toSet()
@@ -318,6 +340,37 @@ class AppState(private val app: Application) {
         }
     }
 
+    private fun pingsFile() = java.io.File(app.filesDir, "pings.json")
+
+    private fun savePings() {
+        try {
+            val o = JSONObject()
+            for ((id, p) in lastGoodPing) o.put(id, JSONArray().put(p.tcp ?: JSONObject.NULL).put(p.udp ?: JSONObject.NULL).put(p.icmp ?: JSONObject.NULL))
+            pingsFile().writeText(o.toString())
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun loadPings() {
+        try {
+            val f = pingsFile()
+            if (!f.exists()) return
+            val o = JSONObject(f.readText())
+            val ids = servers.map { it.id }.toSet()
+            for (id in o.keys()) {
+                if (id !in ids) continue
+                val a = o.getJSONArray(id)
+                fun v(i: Int): Int? = if (a.isNull(i)) null else a.optInt(i)
+                val r = PingResult(tcp = v(0), udp = v(1), icmp = v(2))
+                lastGoodPing[id] = r
+                pings[id] = r
+            }
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun checksFile() = java.io.File(app.filesDir, "checks.json")
+
     private fun saveChecks() {
         val obj = JSONObject()
         synchronized(checks) {
@@ -328,6 +381,10 @@ class AppState(private val app: Application) {
             }
         }
         prefs.edit().putString("checks", obj.toString()).putLong("checks_at", checkedAt).apply()
+        try {
+            checksFile().writeText(obj.toString())
+        } catch (e: Exception) {
+        }
     }
 
     private fun startRecheck() {
@@ -373,6 +430,9 @@ class AppState(private val app: Application) {
     }
 
     private val probeLock = Any()
+    private val failStreak = HashMap<String, Int>()
+    private val lastGoodPing = HashMap<String, PingResult>()
+    private val pingFails = HashMap<String, Int>()
 
     fun checkServices(only: List<Server>? = null) {
         if (checkingServices || servers.isEmpty()) return
@@ -411,9 +471,18 @@ class AppState(private val app: Application) {
                                 launch {
                                     val value = if (config == null || unsupported.get()) Services.SKIPPED else Services.check(config, index, 2, timeout)
                                     if (value == Services.UNSUPPORTED) unsupported.set(true)
-                                    val stored = if (value > 0 || value == Services.PARTIAL || value == Services.SKIPPED) value else -1
+                                    var stored = if (value > 0 || value == Services.PARTIAL || value == Services.SKIPPED) value else -1
                                     synchronized(checks) {
                                         val current = checks[server.id] ?: ServiceCheck(busy = true)
+                                        val key = server.id + ":" + index
+                                        val prev = current.ms.getOrNull(index)
+                                        if (stored == -1 || stored == Services.SKIPPED) {
+                                            val streak = (failStreak[key] ?: 0) + 1
+                                            failStreak[key] = streak
+                                            if (prev != null && prev > 0 && streak < 3) stored = prev
+                                        } else {
+                                            failStreak.remove(key)
+                                        }
                                         checks[server.id] = current.with(index, stored).copy(busy = left.decrementAndGet() > 0)
                                     }
                                 }
@@ -435,7 +504,6 @@ class AppState(private val app: Application) {
                     }
                 }
                 if (unsupported.get()) {
-                    checks.clear()
                     error = "Встроенное ядро не умеет проверять сервисы"
                 } else {
                     checkedAt = System.currentTimeMillis()
@@ -649,7 +717,7 @@ class AppState(private val app: Application) {
     ): String? {
         val input = text.trim()
         if (input.isEmpty()) return "Вставьте ссылку или конфигурацию"
-        class Item(val link: String, val group: String, val url: String, val info: SubInfo?)
+        class Item(val link: String, val group: String, val url: String, val info: SubInfo?, val meta: JSONObject? = null)
         val items = ArrayList<Item>()
         val direct = ArrayList<String>()
         val prepared = Importer.prepare(input)
@@ -666,7 +734,7 @@ class AppState(private val app: Application) {
                 val groupName = forceGroup ?: source.name.ifBlank { fetched.group }
                 for (link in Importer.prepare(Links.decodeSubscription(fetched.body)).items) {
                     if (link.isUrl) continue
-                    items.add(Item(link.value, groupName, forceUrl.ifBlank { source.value }, fetched.info))
+                    items.add(Item(link.value, groupName, forceUrl.ifBlank { source.value }, fetched.info, fetched.meta))
                 }
             } else {
                 direct.add(source.value)
@@ -710,6 +778,7 @@ class AppState(private val app: Application) {
                 if (item.group.isNotBlank()) {
                     ensureGroup(item.group.trim(), item.url)
                     item.info?.let { applyInfo(item.group.trim(), it) }
+                    item.meta?.let { applyMeta(item.group.trim(), it) }
                 }
                 added++
             } catch (e: Exception) {
@@ -719,6 +788,15 @@ class AppState(private val app: Application) {
         save()
         if (added > 0 && autoPing && fresh.isNotEmpty()) ping(fresh)
         return if (added == 0) (failure ?: "Не удалось распознать") else null
+    }
+
+    private fun applyMeta(name: String, m: JSONObject) {
+        if (m.length() == 0) return
+        val i = groups.indexOfFirst { it.name == name }
+        if (i >= 0) groups[i] = groups[i].copy(
+            announce = m.optString("announce"), support = m.optString("support"),
+            web = m.optString("web"), hours = m.optDouble("updateHours", 0.0).toFloat()
+        )
     }
 
     private fun applyInfo(name: String, info: SubInfo) {
@@ -732,6 +810,7 @@ class AppState(private val app: Application) {
             try {
                 val f = withContext(Dispatchers.IO) { Links.fetchMeta(g.url) }
                 f.info?.let { applyInfo(g.name, it) }
+                applyMeta(g.name, f.meta)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -842,7 +921,7 @@ class AppState(private val app: Application) {
         if (list.isEmpty()) return Job().also { it.complete() }
         val mode = pingMode
         val timeout = PingOptions.timeouts[pingTimeout.coerceIn(0, PingOptions.timeouts.size - 1)]
-        list.forEach { pings[it.id] = PingResult(busy = true) }
+        list.forEach { pings[it.id] = (lastGoodPing[it.id] ?: PingResult()).copy(busy = true) }
         return scope.launch {
             val gate = Semaphore(16)
             list.map { server ->
@@ -853,10 +932,20 @@ class AppState(private val app: Application) {
                         } catch (e: Exception) {
                             PingResult(tcp = Ping.FAIL)
                         }
-                        pings[server.id] = result
+                        if (result.best() != Int.MAX_VALUE) {
+                            lastGoodPing[server.id] = result
+                            pingFails.remove(server.id)
+                            pings[server.id] = result
+                        } else {
+                            val n = (pingFails[server.id] ?: 0) + 1
+                            pingFails[server.id] = n
+                            val good = lastGoodPing[server.id]
+                            pings[server.id] = if (good != null && n < 3) good else result
+                        }
                     }
                 }
             }.joinAll()
+            savePings()
         }
     }
 
@@ -981,7 +1070,7 @@ class AppState(private val app: Application) {
         selectedId = id
         save()
         val target = servers.firstOrNull { it.id == id } ?: return
-        if (status == Status.On) launchSwitch(target)
+        if (status == Status.On || status == Status.Connecting) launchSwitch(target)
     }
 
     fun connect() {
@@ -996,6 +1085,7 @@ class AppState(private val app: Application) {
 
     fun disconnect() {
         if (status != Status.On && status != Status.Connecting) return
+        connectJob?.cancel()
         update(Status.Stopping)
         pollJob?.cancel()
         stopGuardUntil = SystemClock.elapsedRealtime() + 8000
@@ -1037,7 +1127,14 @@ class AppState(private val app: Application) {
                 }
             } else {
                 timeoutJob?.cancel()
+                J.w("conn", "service reported down: ${message ?: "-"} (status=$status)")
+                if (status == Status.Connecting && connectJob?.isActive == true) {
+                    failMsg = message ?: "сбой подключения"
+                    return@launch
+                }
+                val wasUp = status == Status.On
                 finishDown(message)
+                if (wasUp && autoReconnect) reconnectAfterDrop()
             }
         }
     }
@@ -1058,7 +1155,24 @@ class AppState(private val app: Application) {
         startRecheck()
     }
 
+    private fun reconnectAfterDrop() {
+        val now = SystemClock.elapsedRealtime()
+        reconnectStamps.removeAll { now - it > 300_000L }
+        if (reconnectStamps.size >= 4) {
+            J.e("conn", "too many drops, auto-reconnect paused")
+            return
+        }
+        reconnectStamps.add(now)
+        val target = servers.firstOrNull { it.id == (activeIdBeforeDrop ?: selectedId) } ?: selected ?: return
+        J.w("conn", "tunnel dropped, reconnecting to ${target.name}")
+        error = null
+        launchSwitch(target, true)
+    }
+
+    private var activeIdBeforeDrop: String? = null
+
     private fun finishDown(message: String?) {
+        if (activeId != null) activeIdBeforeDrop = activeId
         pollJob?.cancel()
         recheckJob?.cancel()
         activeId = null
@@ -1142,7 +1256,7 @@ class AppState(private val app: Application) {
         }
     }
 
-    private fun launchSwitch(target: Server) {
+    private fun launchSwitch(target: Server, auto: Boolean = false) {
         val dpi = target.conf == CorePlugins.DPI_CONF
         val ov = CorePlugins.serverCore(app, target.id)
         val isWg = !dpi && Wg.isConf(target.conf)
@@ -1199,20 +1313,126 @@ class AppState(private val app: Application) {
             intent.putExtra(FasdeqVpnService.EXTRA_PLUGIN_LIB, plugin.lib?.absolutePath ?: "")
             intent.putExtra(FasdeqVpnService.EXTRA_PLUGIN_CONF, Plugins.pluginConfig(app, plugin, target.conf))
         }
-        try {
-            ContextCompat.startForegroundService(app, intent)
-        } catch (e: Exception) {
-            update(Status.Off)
-            error = e.message ?: "Не удалось запустить службу"
-            return
-        }
         if (dpi && Dpi.chosen(app) == null && !DpiSearch.isRunning()) DpiService.start(app)
+        dispatch(target, intent, if (dpi) "dpi" else if (plugin != null) "plugin" else if (awg) "awg" else engine, auto)
+    }
+
+    var autoFailover by mutableStateOf(prefs.getBoolean("auto_failover", true))
+        private set
+    var autoReconnect by mutableStateOf(prefs.getBoolean("auto_reconnect", true))
+        private set
+
+    fun setAutoFailover(v: Boolean) {
+        autoFailover = v
+        prefs.edit().putBoolean("auto_failover", v).apply()
+    }
+
+    fun setAutoReconnect(v: Boolean) {
+        autoReconnect = v
+        prefs.edit().putBoolean("auto_reconnect", v).apply()
+    }
+
+    private var connectJob: Job? = null
+    private var dispatchSeq = 0
+    private var activeKind = ""
+    private var failMsg: String? = null
+    private val failedIds = HashSet<String>()
+    private var hops = 0
+    private val reconnectStamps = ArrayList<Long>()
+
+    private fun vpnPid(): Int = try {
+        val name = app.packageName + ":vpn"
+        app.getSystemService(android.app.ActivityManager::class.java).runningAppProcesses?.firstOrNull { it.processName == name }?.pid ?: -1
+    } catch (e: Throwable) {
+        -1
+    }
+
+    private suspend fun killVpn(maxWait: Long) {
+        val t0 = SystemClock.elapsedRealtime()
+        while (vpnPid() > 0 && SystemClock.elapsedRealtime() - t0 < maxWait) delay(100)
+        val pid = vpnPid()
+        if (pid > 0) {
+            J.w("conn", "vpn process $pid did not exit in ${maxWait} ms, killing")
+            try {
+                Process.killProcess(pid)
+            } catch (e: Throwable) {
+            }
+            val t1 = SystemClock.elapsedRealtime()
+            while (vpnPid() > 0 && SystemClock.elapsedRealtime() - t1 < 1500) delay(100)
+        }
+    }
+
+    private fun dispatch(target: Server, intent: Intent, kind: String, auto: Boolean) {
+        dispatchSeq++
+        connectJob?.cancel()
         timeoutJob?.cancel()
-        timeoutJob = scope.launch {
-            delay(20000)
-            if (status == Status.Connecting && pendingId == target.id) {
+        val prevKind = activeKind
+        activeKind = kind
+        if (!auto) {
+            failedIds.clear()
+            hops = 0
+        }
+        failMsg = null
+        connectJob = scope.launch {
+            J.i("conn", "connect: ${target.name} [$kind]" + if (auto) " (auto)" else "")
+            if (vpnPid() > 0) {
+                J.i("conn", "stopping previous tunnel [$prevKind]")
                 sendStop()
-                finishDown("Не удалось подключиться: истекло время ожидания")
+                killVpn(3500)
+                delay(NativeCore.settle(prevKind))
+            }
+            var n = 0
+            while (isActive) {
+                failMsg = null
+                pendingId = target.id
+                if (status != Status.Connecting) update(Status.Connecting)
+                try {
+                    ContextCompat.startForegroundService(app, intent)
+                } catch (e: Exception) {
+                    J.e("conn", "service start refused: ${e.message}")
+                    update(Status.Off)
+                    error = e.message ?: "Не удалось запустить службу"
+                    return@launch
+                }
+                val limit = NativeCore.startTimeout(kind, n)
+                val t0 = SystemClock.elapsedRealtime()
+                while (isActive && status == Status.Connecting && failMsg == null && SystemClock.elapsedRealtime() - t0 < limit) delay(100)
+                if (!isActive) return@launch
+                if (status == Status.On) {
+                    J.i("conn", "up after ${SystemClock.elapsedRealtime() - t0} ms (attempt ${n + 1})")
+                    return@launch
+                }
+                if (status != Status.Connecting) return@launch // the user stopped it
+                val why = failMsg ?: "истекло время ожидания (${limit / 1000} с)"
+                J.w("conn", "attempt ${n + 1} failed: $why")
+                if (vpnPid() > 0) sendStop()
+                killVpn(2500)
+                n++
+                val wait = NativeCore.retryDelay(n)
+                val failover = autoFailover && (n >= 2 || wait == null)
+                if (failover && hops < 3) {
+                    failedIds.add(target.id)
+                    val candidates = HashMap<String, Int>()
+                    for (s in servers) if (s.id != CorePlugins.DPI_ID) candidates[s.id] = pings[s.id]?.best() ?: 0
+                    val next = NativeCore.pickNext(candidates, failedIds, target.id)
+                    val srv = servers.firstOrNull { it.id == next }
+                    if (srv != null) {
+                        hops++
+                        J.w("conn", "failover: ${target.name} → ${srv.name}")
+                        selectedId = srv.id
+                        save()
+                        val before = dispatchSeq
+                        launchSwitch(srv, true)
+                        if (dispatchSeq == before && status == Status.Connecting) finishDown(error ?: "Не удалось подключиться")
+                        return@launch
+                    }
+                }
+                if (wait == null) {
+                    J.e("conn", "giving up on ${target.name}: $why")
+                    finishDown("Не удалось подключиться: $why")
+                    return@launch
+                }
+                delay(wait + NativeCore.settle(kind))
             }
         }
     }
@@ -1263,7 +1483,7 @@ class AppState(private val app: Application) {
             val arr = JSONArray(raw)
             (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Group(o.getString("name"), o.optString("url"), o.optLong("used", 0), o.optLong("total", -1), o.optLong("expire", 0))
+                Group(o.getString("name"), o.optString("url"), o.optLong("used", 0), o.optLong("total", -1), o.optLong("expire", 0), o.optString("announce"), o.optString("support"), o.optString("web"), o.optDouble("hours", 0.0).toFloat())
             }
         } catch (e: Exception) {
             emptyList()
@@ -1283,7 +1503,7 @@ class AppState(private val app: Application) {
             )
         }
         val garr = JSONArray()
-        groups.forEach { garr.put(JSONObject().put("name", it.name).put("url", it.url).put("used", it.used).put("total", it.total).put("expire", it.expire)) }
+        groups.forEach { garr.put(JSONObject().put("name", it.name).put("url", it.url).put("used", it.used).put("total", it.total).put("expire", it.expire).put("announce", it.announce).put("support", it.support).put("web", it.web).put("hours", it.hours.toDouble())) }
         prefs.edit()
             .putString("servers", arr.toString())
             .putString("groups", garr.toString())

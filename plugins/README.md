@@ -78,3 +78,7 @@ FasdeqPlugin.define("my-plugin", function (api) {
 
 - `samples/ru-bypass.zip` — правила: российские домены напрямую, свои приложения и домены в настройках.
 - `samples/session-card.zip` — дополнение интерфейса: карточка трафика на главной.
+
+## Theme plugins
+
+Theme packs are plain JSON, see THEMES.md and samples/themes/.

@@ -23,4 +23,22 @@ public final class Native {
     public static native String pluginCall(long handle, String op, String config, int fd, long arg);
 
     public static native String pluginClose(long handle);
+
+    public static native void journalInit(String path);
+
+    public static native void journalAdd(String level, String tag, String msg);
+
+    public static native String journalRead(int lines);
+
+    public static native void journalClear();
+
+    public static native long retryDelay(int attempt);
+
+    public static native long startTimeout(String kind, int attempt);
+
+    public static native long settleMs(String prev);
+
+    public static native String pickNext(String candidates, String failed, String current);
+
+    public static native String subHeaders(String headers);
 }

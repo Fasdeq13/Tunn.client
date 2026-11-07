@@ -12,7 +12,7 @@ data class Parsed(val name: String, val endpoint: String, val outbound: JSONObje
 
 class SubInfo(val used: Long, val total: Long, val expire: Long)
 
-class Fetched(val body: String, val group: String, val info: SubInfo? = null)
+class Fetched(val body: String, val group: String, val info: SubInfo? = null, val meta: org.json.JSONObject = org.json.JSONObject())
 
 object Links {
 
@@ -345,7 +345,10 @@ object Links {
                 if (m != null) title = m.groupValues[1].trim()
             }
             if (title.isBlank()) title = c.url.host ?: ""
-            return Fetched(body, decode(title).trim(), parseInfo(c.getHeaderField("subscription-userinfo")))
+            val hdrs = HashMap<String, String>()
+            for ((k, v) in c.headerFields) if (k != null && !v.isNullOrEmpty()) hdrs[k.lowercase()] = v[0]
+            val meta = NativeCore.subHeaders(hdrs)
+            return Fetched(body, decode(title).trim(), parseInfo(c.getHeaderField("subscription-userinfo")), meta)
         } finally {
             c.disconnect()
         }
