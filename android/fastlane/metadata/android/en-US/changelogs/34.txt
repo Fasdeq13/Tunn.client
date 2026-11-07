@@ -1,0 +1,1 @@
+3.13: subscriptions now fetch the Happ-style JSON variant first; theme plugins (JSON palette + settings, Appearance → Theme plugins); C helper library (base64, SHA-256, link parser, CIDR).

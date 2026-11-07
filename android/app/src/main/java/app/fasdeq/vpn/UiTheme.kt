@@ -126,8 +126,10 @@ fun isDarkFor(theme: Int): Boolean = when (theme) {
 }
 
 @Composable
-fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
+fun TunnTheme(s0: Snap, content: @Composable () -> Unit) {
     val ctx = LocalContext.current
+    val pack = Themes.active(ctx)
+    val s = if (pack == null) s0 else s0.copy(tune = s0.tune + Themes.tune(pack), theme = Themes.forcedMode(pack).let { if (it == 0) s0.theme else it })
     var dark = isDarkFor(s.theme)
     val bg = if (s.bgOn && !s.glass) parseHex(s.bgHex) else null
     if (bg != null) dark = lum(bg) <= 0.55f
@@ -146,6 +148,7 @@ fun TunnTheme(s: Snap, content: @Composable () -> Unit) {
     } else {
         accentScheme(custom ?: Color(0xFF4FD8C8), dark, bg, dark && s.amoled, s.t("mSat", 100f) / 100f, s.t("mSurf", 100f) / 100f)
     }
+    scheme = Themes.paint(scheme, pack, dark)
     if (wall && !s.glass) scheme = scheme.copy(background = Color.Transparent, surface = Color.Transparent)
     val ui = UiTune(
         s.t("uiRadius", 100f) / 100f * (if (fluent) 0.36f else 1f), s.t("uiSpace", 100f) / 100f,

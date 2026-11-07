@@ -202,6 +202,7 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
                 Tune(a, s, "mSurf", "Контраст поверхностей", 0f, 250f, 100f, "%", enabled = !s.dynamic && !s.bgOn)
             }
         }
+        ThemePacks(a)
         Section("Форма и размеры") {
             Tune(a, s, "uiRadius", "Скругление", 40f, 160f, 100f, "%")
             Tune(a, s, "uiSpace", "Отступы", 60f, 170f, 100f, "%")
@@ -377,7 +378,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 3.12 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 3.13 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -563,5 +564,46 @@ private fun SetupCheck(text: String, value: Boolean, onChange: (Boolean) -> Unit
     Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Checkbox(value, onChange)
         Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+
+@androidx.compose.runtime.Composable
+fun ThemePacks(a: ComposeActivity) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val packs = Themes.list(ctx)
+    val active = Themes.activeId(ctx)
+    var msg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    Themes.rev
+    Section("Темы-плагины") {
+        Text(
+            "JSON-пакет с палитрой и настройками меняет оформление всего приложения. Формат описан в plugins/THEMES.md.",
+            Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        packs.forEach { p ->
+            val on = p.id == active
+            androidx.compose.foundation.layout.Row(
+                Modifier.fillMaxWidth().clickable { if (on) Themes.select(ctx, "") else Themes.select(ctx, p.id) }.padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.name + if (on) "  ✓" else "", style = MaterialTheme.typography.bodyLarge)
+                    if (p.author.isNotEmpty()) Text(p.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { Themes.remove(ctx, p.id) }) { Text("Удалить") }
+            }
+        }
+        TextButton(onClick = {
+            a.pickPlugin { uri ->
+                if (uri != null) {
+                    msg = try {
+                        val txt = a.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                        Themes.install(ctx, txt) ?: ""
+                    } catch (e: Exception) { e.message ?: "Ошибка чтения" }
+                }
+            }
+        }, Modifier.padding(horizontal = 12.dp)) { Text("Установить тему из файла…") }
+        if (msg.isNotEmpty()) Text(msg, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }

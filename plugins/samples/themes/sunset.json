@@ -1,0 +1,3 @@
+{"id":"sunset","name":"Sunset","author":"Tunn","mode":"dark",
+ "dark":{"primary":"#FF8A65","onPrimary":"#2A0E05","primaryContainer":"#5A2A1A","onPrimaryContainer":"#FFDBCF","background":"#1B1210","surface":"#261A16","onSurface":"#F5E6DF","surfaceVariant":"#3A2A24","onSurfaceVariant":"#D8C2B8","container":"#2F211C","outline":"#5A4038"},
+ "tune":{"uiRadius":120,"cardStyle":1,"swStyle":1}}

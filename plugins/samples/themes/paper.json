@@ -1,0 +1,3 @@
+{"id":"paper","name":"Paper","author":"Tunn","mode":"light",
+ "light":{"primary":"#1F5FBF","onPrimary":"#FFFFFF","background":"#F7F5F0","surface":"#FFFFFF","onSurface":"#1C1B18","container":"#EFECE4","outline":"#CFCABD"},
+ "tune":{"uiRadius":60,"cardStyle":2,"swStyle":2}}

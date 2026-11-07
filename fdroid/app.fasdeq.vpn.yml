@@ -9,9 +9,9 @@ AutoName: Tunn
 RepoType: git
 Repo: https://github.com/Fasdeq13/FasdeqVPN.git
 Builds:
-  - versionName: '3.12'
-    versionCode: 33
-    commit: v3.12
+  - versionName: '3.13'
+    versionCode: 34
+    commit: v3.13
     subdir: android/app
     gradle:
       - full

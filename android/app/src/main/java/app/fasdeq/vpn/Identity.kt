@@ -52,7 +52,8 @@ object Identity {
         val host = try { java.net.URL(url).host ?: "" } catch (e: Exception) { "" }
         val known = prefs().getInt("maskfor:$host", -1)
         val list = ArrayList<Int>()
-        if (known in names.indices) list.add(known)
+        list.add(1)
+        if (known in 2 until names.size && known !in list) list.add(known)
         if (mask() !in list) list.add(mask())
         for (i in names.indices) if (i !in list) list.add(i)
         return list

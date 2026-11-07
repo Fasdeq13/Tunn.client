@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(fqc C)
+set(CMAKE_C_STANDARD 11)
+add_library(fqc SHARED src/b64.c src/sha256.c src/link.c src/cidr.c src/jni.c)
+target_include_directories(fqc PRIVATE include)

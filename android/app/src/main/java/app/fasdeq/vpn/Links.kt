@@ -243,7 +243,7 @@ object Links {
         var tlsFailure = false
         for (m in Identity.order(url)) {
             try {
-                val r = fetchOnce(url, m, false)
+                val r = preferJson(url, m, fetchOnce(url, m, false), false)
                 Identity.remember(url, m)
                 return r
             } catch (e: javax.net.ssl.SSLException) {
@@ -259,7 +259,7 @@ object Links {
         if (tlsFailure && url.startsWith("https", true)) {
             for (m in Identity.order(url)) {
                 try {
-                    val r = fetchOnce(url, m, true)
+                    val r = preferJson(url, m, fetchOnce(url, m, true), true)
                     Identity.remember(url, m)
                     return r
                 } catch (e: java.io.IOException) {
@@ -270,6 +270,19 @@ object Links {
             }
         }
         throw last ?: IllegalStateException("Не удалось загрузить")
+    }
+
+    private fun preferJson(url: String, m: Int, r: Fetched, legacy: Boolean): Fetched {
+        if (m == 1) return r
+        val head = decodeSubscription(r.body).trimStart()
+        if (head.startsWith("{") || head.startsWith("[")) return r
+        return try {
+            val h = fetchOnce(url, 1, legacy)
+            val hh = decodeSubscription(h.body).trimStart()
+            if (hh.startsWith("[") || hh.startsWith("{")) h else r
+        } catch (e: Exception) {
+            r
+        }
     }
 
     private fun legacyTls(): javax.net.ssl.SSLSocketFactory {
