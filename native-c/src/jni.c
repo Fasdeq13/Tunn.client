@@ -1,4 +1,3 @@
-/* JNI bridge for app.fasdeq.vpn.NativeC (opt-in, see native-c/README.md). Not part of the host test build. */
 #include <jni.h>
 #include <string.h>
 #include "fqc.h"
@@ -13,7 +12,6 @@ JNIEXPORT jstring JNICALL Java_app_fasdeq_vpn_NativeC_sha256(JNIEnv *env, jclass
     return (*env)->NewStringUTF(env, hex);
 }
 
-/* ranges: CIDR list text; returns 1/0, -1 for bad ip, -2 on out-of-memory */
 JNIEXPORT jint JNICALL Java_app_fasdeq_vpn_NativeC_cidrContains(JNIEnv *env, jclass cls, jstring ranges, jstring ip) {
     (void)cls;
     const char *r = (*env)->GetStringUTFChars(env, ranges, NULL);

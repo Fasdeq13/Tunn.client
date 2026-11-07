@@ -103,6 +103,11 @@ class WebBridge(private val host: BaseUiActivity) {
                 app.select(text)
                 if (why != null) reply(id, JSONObject().put("error", why)) else reply(id)
             }
+            "fav" -> {
+                app.toggleFav(text)
+                reply(id)
+                pushLater()
+            }
             "remove" -> {
                 app.servers.firstOrNull { it.id == text }?.let { app.remove(it) }
                 reply(id)
@@ -641,6 +646,7 @@ class WebBridge(private val host: BaseUiActivity) {
                     .put("blocked", blockedFor(s.conf, s.id) ?: JSONObject.NULL)
                     .put("core", CorePlugins.serverCore(host, s.id))
                     .put("ver", CorePlugins.serverVer(host, s.id))
+                    .put("fav", st.isFav(s.id))
             )
         }
         o.put("servers", servers)

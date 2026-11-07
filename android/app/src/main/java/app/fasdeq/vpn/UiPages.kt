@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -379,7 +380,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 4.0 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 4.1 · создатель fasdeq13", {
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -634,6 +635,95 @@ fun JournalPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+
+@androidx.compose.runtime.Composable
+fun StorePage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var stamp by remember { mutableStateOf(0) }
+    var msg by remember { mutableStateOf("") }
+    val items = Store.items
+    Themes.rev
+    UiNative.rev
+    stamp
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (Store.items == null) {
+            val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
+            if (e != null) msg = e
+            stamp++
+        }
+    }
+    SubPage("Каталог плагинов и тем", onBack) {
+        Text(
+            "Репозиторий github.com/" + Store.REPO + ". Архивы проверяются по SHA-256 из каталога. Плагины выполняют код: ставьте только то, чему доверяете.",
+            Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(Modifier.padding(horizontal = 12.dp)) {
+            TextButton({
+                scope.launch {
+                    msg = ""
+                    val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
+                    if (e != null) msg = e
+                    stamp++
+                }
+            }) { Text("Обновить каталог") }
+        }
+        if (msg.isNotEmpty()) Text(msg, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        if (items == null && msg.isEmpty()) Text("Загрузка…", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+        val titles = listOf("plugin" to "Плагины правил", "ui" to "Интерфейсы (.so на Rust)", "theme" to "Темы")
+        for ((kind, title) in titles) {
+            val group = items?.filter { it.kind == kind } ?: continue
+            if (group.isEmpty()) continue
+            Section(title) {
+                for (item in group) {
+                    val have = Store.installed(ctx, item)
+                    val upd = have != null && have != item.version
+                    androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                        Text(item.name + "  " + item.version + if (have != null && !upd) "  ✓" else "", style = MaterialTheme.typography.bodyLarge)
+                        if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    msg = ""
+                                    val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.install(ctx, item) }
+                                    if (e != null) msg = e else a.say(item.name + " установлен")
+                                    stamp++
+                                }
+                            }, enabled = Store.busy == null) { Text(if (have == null) "Установить" else if (upd) "Обновить до " + item.version else "Переустановить") }
+                            if (have != null) TextButton({ Store.remove(ctx, item); stamp++ }) { Text("Удалить") }
+                            if (kind == "ui" && have != null) {
+                                val key = UiNative.list(ctx).firstOrNull { p -> p.id == item.id }?.key
+                                if (key != null) TextButton({ UiNative.setActive(ctx, if (UiNative.activeKey(ctx) == key) "" else key) }) {
+                                    Text(if (UiNative.activeKey(ctx) == key) "Выключить" else "Включить")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val local = UiNative.list(ctx)
+        if (local.isNotEmpty()) Section("Установленные интерфейсы") {
+            for (p in local) {
+                val on = UiNative.activeKey(ctx) == p.key
+                androidx.compose.foundation.layout.Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text(p.name + "  " + p.version + if (on) "  ✓" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    TextButton({ UiNative.setActive(ctx, if (on) "" else p.key) }) { Text(if (on) "Выключить" else "Включить") }
+                }
+            }
+            Text(
+                "Если интерфейс не запускается или приложение закрывается, при следующем старте он выключается сам. Кнопка × в углу возвращает стандартный.",
+                Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

@@ -11,7 +11,8 @@ data class SrvUi(
     val group: String,
     val blocked: String?,
     val core: String,
-    val ver: String
+    val ver: String,
+    val fav: Boolean = false
 )
 
 data class GroupUi(val name: String, val url: String, val used: Long, val total: Long, val expire: Long, val announce: String = "", val support: String = "", val web: String = "", val hours: Float = 0f)
@@ -180,7 +181,7 @@ fun parseSnap(json: String): Snap {
         servers.add(
             SrvUi(
                 s.optString("id"), s.optString("name"), s.optString("proto"), s.optString("endpoint"),
-                s.optString("group"), s.strOrNull("blocked"), s.optString("core"), s.optString("ver")
+                s.optString("group"), s.strOrNull("blocked"), s.optString("core"), s.optString("ver"), s.optBoolean("fav")
             )
         )
     }

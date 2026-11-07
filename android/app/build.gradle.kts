@@ -13,8 +13,8 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 35
-        versionName = (project.findProperty("app.vname") as String?) ?: "4.0"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 36
+        versionName = (project.findProperty("app.vname") as String?) ?: "4.1"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {
@@ -22,8 +22,6 @@ android {
         }
     }
 
-    // full: everything inside; min: only the sing-box core, the rest is downloaded in "Components";
-    // netinstall: no cores at all, the first launch asks what to download
     flavorDimensions += "dist"
     productFlavors {
         create("full") {
@@ -129,7 +127,6 @@ dependencies {
     implementation("com.zaneschepke:amneziawg-android:2.3.7")
 }
 
-// Optional picture: put icon.png / icon.jpg / icon.jpeg into the project root, it is bundled as an asset
 val eggRoot = rootProject.projectDir.parentFile
 val eggDir = layout.buildDirectory.dir("egg")
 val eggCopy = tasks.register<Copy>("eggCopy") {

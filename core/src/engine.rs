@@ -1,4 +1,3 @@
-
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
@@ -25,7 +24,7 @@ pub const FAILOVER_AFTER: u32 = 2;
 
 pub fn settle_ms(prev: &str) -> u64 {
     match prev {
-        "awg" | "wg" => 900, // the Go runtime and the tun fd need a moment
+        "awg" | "wg" => 900,
         "plugin" => 700,
         _ => 400,
     }
@@ -60,7 +59,7 @@ pub struct Health {
 
 impl Health {
     pub const LIMIT: u32 = 3;
-    pub fn record(&mut self, ok: bool) -> bool {
+        pub fn record(&mut self, ok: bool) -> bool {
         if ok {
             self.good += 1;
             self.bad = 0;

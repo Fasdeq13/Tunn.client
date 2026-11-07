@@ -41,4 +41,20 @@ public final class Native {
     public static native String pickNext(String candidates, String failed, String current);
 
     public static native String subHeaders(String headers);
+
+    public static native String uiOpen(String path, int w, int h, float density);
+
+    public static native void uiClose();
+
+    public static native void uiResize(int w, int h);
+
+    public static native void uiState(String json);
+
+    public static native void uiTouch(int kind, float x, float y);
+
+    public static native void uiBack();
+
+    public static native int uiRender(java.nio.ByteBuffer buf, int w, int h, int stride, int t);
+
+    public static native String uiPoll();
 }

@@ -1065,6 +1065,15 @@ class AppState(private val app: Application) {
         }
     }
 
+    private val favSet = HashSet<String>(prefs.getStringSet("favs", emptySet()) ?: emptySet())
+
+    fun isFav(id: String) = favSet.contains(id)
+
+    fun toggleFav(id: String) {
+        if (!favSet.remove(id)) favSet.add(id)
+        prefs.edit().putStringSet("favs", HashSet(favSet)).apply()
+    }
+
     fun select(id: String) {
         if (selectedId == id) return
         selectedId = id
@@ -1402,7 +1411,7 @@ class AppState(private val app: Application) {
                     J.i("conn", "up after ${SystemClock.elapsedRealtime() - t0} ms (attempt ${n + 1})")
                     return@launch
                 }
-                if (status != Status.Connecting) return@launch // the user stopped it
+                if (status != Status.Connecting) return@launch
                 val why = failMsg ?: "истекло время ожидания (${limit / 1000} с)"
                 J.w("conn", "attempt ${n + 1} failed: $why")
                 if (vpnPid() > 0) sendStop()

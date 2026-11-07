@@ -34,7 +34,7 @@ object Themes {
     fun activeId(c: Context): String = prefs(c).getString("active", "") ?: ""
 
     fun active(c: Context): Theme? {
-        rev // subscribe
+        rev
         val id = activeId(c)
         if (id.isEmpty()) return null
         cache?.let { if (it.first == id + rev) return it.second }

@@ -212,7 +212,7 @@ object Plugins {
         prefs(context).edit().putString(ENGINE, key).apply()
     }
 
-    private fun safeName(n: String): Boolean =
+    fun safeName(n: String): Boolean =
         n.isNotEmpty() && !n.contains("..") && !n.startsWith("/") && !n.contains('\\')
 
     fun install(context: Context, input: InputStream, fileName: String): PluginInfo {

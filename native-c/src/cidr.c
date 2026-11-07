@@ -33,7 +33,6 @@ static int parse6(const char *s, uint8_t *o) {
     if (p[0] == ':' && p[1] == ':') { gap = 1; p += 2; if (!*p) { memset(o, 0, 16); return 0; } }
     else if (p[0] == ':') return -1;
     for (;;) {
-        /* IPv4 tail */
         const char *dot = strchr(p, '.');
         const char *col = strchr(p, ':');
         if (dot && (!col || dot < col)) {
@@ -98,7 +97,7 @@ int fqc_cidr_parse(const char *s, fqc_cidr *o) {
     if (bits > max) return -1;
     o->v6 = (uint8_t)v6;
     o->bits = (uint8_t)bits;
-    for (int i = 0; i < 16; i++) { /* normalise host bits to zero */
+    for (int i = 0; i < 16; i++) {
         int keep = bits - i * 8;
         if (keep >= 8) continue;
         o->addr[i] = (uint8_t)(keep <= 0 ? 0 : (o->addr[i] & (0xFF << (8 - keep))));

@@ -134,6 +134,12 @@ private fun parentOf(page: String): String = when (page) {
 fun AppRoot(a: ComposeActivity) {
     val s = a.snap.value
     TunnTheme(s) {
+        val nativeCtx = androidx.compose.ui.platform.LocalContext.current
+        val nativeUi = remember(UiNative.rev) { UiNative.arm(nativeCtx) }
+        if (nativeUi != null) {
+            NativeUiHost(a, s, nativeUi) {}
+            return@TunnTheme
+        }
         val page = rememberSaveable { mutableStateOf("home") }
         val sheet = remember { mutableStateOf<Sheet?>(null) }
         val host = remember { SnackbarHostState() }
@@ -321,7 +327,7 @@ fun HomeScreen(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, goSettings: (
     val names = ArrayList<String>()
     for (g in s.groups) names.add(g.name)
     for (x in s.servers) if (x.group.isNotEmpty() && !names.contains(x.group)) names.add(x.group)
-    fun order(l: List<SrvUi>): List<SrvUi> = if (s.sortPing) l.sortedBy { s.pings[it.id]?.ms ?: Int.MAX_VALUE } else l
+    fun order(l: List<SrvUi>): List<SrvUi> = (if (s.sortPing) l.sortedBy { s.pings[it.id]?.ms ?: Int.MAX_VALUE } else l).sortedByDescending { it.fav }
     if (local.isNotEmpty()) {
         if (names.isNotEmpty()) rows.add(Row2.Head("", local.size, null))
         if (!collapsed.value.contains("")) for (x in order(local)) rows.add(Row2.Srv(x))
@@ -543,7 +549,13 @@ private fun ServerRow(a: ComposeActivity, s: Snap, v: SrvUi, modifier: Modifier,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Text(
+                if (v.fav) "★" else "☆",
+                Modifier.clickable { a.call("fav", v.id) }.padding(horizontal = 8.dp, vertical = 6.dp),
+                color = if (v.fav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.width(4.dp))
             Column(horizontalAlignment = Alignment.End) {
                 PingChip(s.pings[v.id])
                 val c = s.checks[v.id]
@@ -603,10 +615,11 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_apps, "Плагины и ядра", "sing-box, Xray, WireGuard, свои плагины") { go("plugins") }
         CategoryRow(R.drawable.ic_apps, "Компоненты", if (s.dist == "full") "sing-box, Xray, AmneziaWG: версии" else "Скачать sing-box, Xray, AmneziaWG") { go("components") }
         CategoryRow(R.drawable.ic_bolt, "Пинг и сервисы", "Способ проверки, автопроверка") { go("ping") }
+        CategoryRow(R.drawable.ic_refresh, "Каталог плагинов и тем", "Плагины, темы и интерфейсы из Tunn-plugins") { go("store") }
         CategoryRow(R.drawable.ic_refresh, "Журнал и диагностика", "Переподключение, автовыбор, журнал подключения") { go("journal") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.0, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.1, создатели, канал") { go("about") }
     }
 }
 
@@ -621,6 +634,7 @@ fun SettingsPage(a: ComposeActivity, s: Snap, page: String, open: (Sheet) -> Uni
         "subs" -> SubsPage(a, s, open, onBack)
         "updates" -> UpdatesPage(a, s, onBack)
         "journal" -> JournalPage(a, s, onBack)
+        "store" -> StorePage(a, s, onBack)
         else -> AboutPage(a, onBack)
     }
 }

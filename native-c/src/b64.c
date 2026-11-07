@@ -41,7 +41,7 @@ size_t fqc_b64_decode(const char *in, size_t n, uint8_t *out, size_t cap) {
         unsigned char c = (unsigned char)in[i];
         if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
         if (c == '=') { pad = 1; continue; }
-        if (pad) return (size_t)-1; /* data after padding */
+        if (pad) return (size_t)-1;
         int v = val(c);
         if (v < 0) return (size_t)-1;
         acc = acc << 6 | (uint32_t)v;
@@ -52,6 +52,6 @@ size_t fqc_b64_decode(const char *in, size_t n, uint8_t *out, size_t cap) {
             out[o++] = (uint8_t)(acc >> bits & 0xFF);
         }
     }
-    if (bits >= 6) return (size_t)-1; /* a lone trailing symbol carries no byte */
+    if (bits >= 6) return (size_t)-1;
     return o;
 }

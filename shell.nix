@@ -1,5 +1,3 @@
-# NixOS 26.05: ./build.sh enters this environment automatically.
-# Manual entry: nix-shell shell.nix
 { pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
 
 let
@@ -13,11 +11,9 @@ let
       rustup
       python3
       gtk3 glib cairo pango gdk-pixbuf atk libayatana-appindicator xdotool harfbuzz zlib openssl
-      # headers + pkg-config files (the "dev" outputs are not linked into the FHS env by default)
       glib.dev gtk3.dev cairo.dev pango.dev gdk-pixbuf.dev atk.dev harfbuzz.dev fontconfig.dev freetype.dev
       libxkbcommon.dev wayland.dev zlib.dev openssl.dev libayatana-appindicator.dev
       xorg.libX11 xorg.libXcursor xorg.libXrandr xorg.libXi libxkbcommon wayland libGL
-      # Windows cross build
       pkgsCross.mingwW64.stdenv.cc
       pkgsCross.mingwW64.windows.pthreads
     ];

@@ -1,5 +1,6 @@
 pub mod api;
 pub mod plugin;
+pub mod uihost;
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jlong, jstring};
@@ -153,4 +154,52 @@ pub extern "system" fn Java_app_fasdeq_vpn_Native_subHeaders(mut env: JNIEnv, _:
     let h = text(&mut env, &headers);
     let v: Value = serde_json::from_str(&h).unwrap_or(Value::Null);
     reply(&mut env, fasdeq_core::engine::parse_sub_headers(&v))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiOpen(mut env: JNIEnv, _: JClass, path: JString, w: jint, h: jint, density: jni::sys::jfloat) -> jstring {
+    let p = text(&mut env, &path);
+    reply(&mut env, uihost::open(&p, w, h, density))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiClose(_: JNIEnv, _: JClass) {
+    uihost::close();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiResize(_: JNIEnv, _: JClass, w: jint, h: jint) {
+    uihost::resize(w, h);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiState(mut env: JNIEnv, _: JClass, json: JString) {
+    let s = text(&mut env, &json);
+    uihost::state(&s);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiTouch(_: JNIEnv, _: JClass, kind: jint, x: jni::sys::jfloat, y: jni::sys::jfloat) {
+    uihost::touch(kind, x, y);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiBack(_: JNIEnv, _: JClass) {
+    uihost::back();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiRender(env: JNIEnv, _: JClass, buf: jni::objects::JByteBuffer, w: jint, h: jint, stride: jint, t: jint) -> jint {
+    let Ok(ptr) = env.get_direct_buffer_address(&buf) else { return -2 };
+    let cap = env.get_direct_buffer_capacity(&buf).unwrap_or(0);
+    if (stride as i64) * (h as i64) > cap as i64 {
+        return -3;
+    }
+    unsafe { uihost::render(ptr, w, h, stride, t as u32) }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_app_fasdeq_vpn_Native_uiPoll(mut env: JNIEnv, _: JClass) -> jstring {
+    let s = uihost::poll().unwrap_or_default();
+    env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
