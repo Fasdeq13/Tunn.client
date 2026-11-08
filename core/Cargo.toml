@@ -1,11 +1,11 @@
 [package]
-name = "fasdeq-core"
-version = "4.2.0"
+name = "tunn-backend"
+version = "4.3.0"
 edition = "2021"
 description = "Tunn shared core"
 
 [lib]
-name = "fasdeq_core"
+name = "tunn_backend"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,1 @@
+Tunn 4.3: own update format. .Update replaces app code entirely, .fix patches single classes, no APK install. Packs are signed, a bad layer rolls back automatically. Modules in appearance and connection, steadier ping.

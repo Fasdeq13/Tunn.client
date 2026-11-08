@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-VERSION="4.2"
+VERSION="4.3"
 TARGET="android"
 [ "${1:-}" = android ] && shift
 VARIANT="${1:-all}"
@@ -160,11 +160,11 @@ build_android() {
         ks="$HOME/.fasdeq/release.jks"
         # shellcheck disable=SC1091
         . "$HOME/.fasdeq/ks.env"
-        kpass="$KS_PASS_SAVED"; kalias="fasdeq"
+        kpass="$KS_PASS_SAVED"; kalias="tunn"
       elif [ -f "$HOME/.android/debug.keystore" ]; then
         ks="$HOME/.android/debug.keystore"; kpass="android"; kalias="androiddebugkey"
       else
-        ks="$HOME/.fasdeq/release.jks"; kpass="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"; kalias="fasdeq"
+        ks="$HOME/.fasdeq/release.jks"; kpass="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"; kalias="tunn"
         keytool -genkeypair -v -keystore "$ks" -storepass "$kpass" -keypass "$kpass" -alias "$kalias" -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Tunn" >/dev/null 2>&1
         printf 'KS_PASS_SAVED=%s\n' "$kpass" > "$HOME/.fasdeq/ks.env"
         chmod 600 "$ks" "$HOME/.fasdeq/ks.env"
@@ -201,6 +201,15 @@ build_android() {
     if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
     cp "$apk" "dist/Tunn-android-$VERSION-$v.apk"
     say "APK: $ROOT/dist/Tunn-android-$VERSION-$v.apk"
+    rm -rf "dist/classes-$VERSION-$v"; mkdir -p "dist/classes-$VERSION-$v"
+    for d in android/app/build/tmp/kotlin-classes/${v}* android/app/build/intermediates/javac/${v}*/classes; do
+      [ -d "$d" ] && cp -r "$d/." "dist/classes-$VERSION-$v/"
+    done
+    if [ -f "$HOME/.tunn/pack.pem" ]; then
+      python3 tools/pack.py update --apk "dist/Tunn-android-$VERSION-$v.apk" --version "$VERSION" --out dist || say "pack: Update not built"
+    else
+      say "pack: no key, run python3 tools/pack.py keygen to enable .Update/.fix"
+    fi
   done
 }
 

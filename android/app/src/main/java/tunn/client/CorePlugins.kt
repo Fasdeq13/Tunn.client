@@ -1,0 +1,140 @@
+package tunn.client
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+
+object CorePlugins {
+    const val XRAY = "xray"
+    const val SINGBOX = "singbox"
+    const val TUIC = "tuic"
+    const val WG = "wireguard"
+    const val AWG = "awg"
+    const val DPI = "dpi"
+    const val DPI_ID = "dpi-free"
+    const val DPI_CONF = "dpi://free"
+    const val DPI_NAME = "Бесплатный сервер DPI-обход"
+
+    private fun prefs(c: Context) = c.getSharedPreferences("core_plugins", Context.MODE_PRIVATE)
+
+    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", id != TUIC)
+
+    fun deleted(c: Context, id: String): Boolean = prefs(c).getBoolean("del_$id", false)
+
+    fun primary(c: Context): String = prefs(c).getString("primary", SINGBOX) ?: SINGBOX
+
+    fun fallback(c: Context): Boolean = prefs(c).getBoolean("xray_fallback", true)
+
+    fun setFallback(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("xray_fallback", v).apply()
+    }
+
+    fun serverCore(c: Context, id: String): String = prefs(c).getString("srv_$id", "") ?: ""
+
+    fun serverVer(c: Context, id: String): String = prefs(c).getString("srvver_$id", "") ?: ""
+
+    fun setServer(c: Context, id: String, core: String, ver: String) {
+        prefs(c).edit().putString("srv_$id", core).putString("srvver_$id", ver).apply()
+    }
+
+    fun corePath(c: Context, engine: String, serverId: String): String {
+        val ver = serverVer(c, serverId)
+        if (engine == SINGBOX) {
+            return SbCores.pathOf(c, ver.ifEmpty { SbCores.active(c) }) ?: ""
+        }
+        return Cores.pathOf(c, ver.ifEmpty { Cores.active(c) }) ?: ""
+    }
+
+    fun setEnabled(c: Context, id: String, value: Boolean) {
+        prefs(c).edit().putBoolean("on_$id", value).apply()
+    }
+
+    fun setPrimary(c: Context, id: String) {
+        prefs(c).edit().putString("primary", id).apply()
+    }
+
+    fun delete(c: Context, id: String) {
+        prefs(c).edit().putBoolean("del_$id", true).putBoolean("on_$id", false).apply()
+        if (id == XRAY) {
+            for (core in Cores.list(c)) Cores.delete(c, core.id)
+        }
+    }
+
+    fun restore(c: Context, id: String) {
+        prefs(c).edit().putBoolean("del_$id", false).putBoolean("on_$id", true).apply()
+    }
+
+    fun singboxFile(c: Context): File = File(c.applicationInfo.nativeLibraryDir, "libsingbox.so")
+
+    fun present(c: Context, id: String): Boolean = when (id) {
+        XRAY -> !deleted(c, XRAY) && Components.has(c, Components.XRAY)
+        SINGBOX -> !deleted(c, SINGBOX) && Components.has(c, Components.SINGBOX)
+        TUIC -> !deleted(c, TUIC) && Components.has(c, Components.SINGBOX)
+        AWG -> !deleted(c, AWG) && Components.has(c, Components.AWG)
+        else -> !deleted(c, id)
+    }
+
+    fun usable(c: Context, id: String): Boolean = present(c, id) && enabled(c, id)
+
+    fun pick(c: Context, outbound: JSONObject, override: String = ""): String? {
+        if (outbound.optString("protocol") == "tuic") return if (usable(c, TUIC) && usable(c, SINGBOX)) SINGBOX else null
+        val sbOk = usable(c, SINGBOX) && SingBox.supports(outbound)
+        val xOk = usable(c, XRAY)
+        if (override == SINGBOX) return if (sbOk) SINGBOX else null
+        if (override == XRAY) return if (xOk) XRAY else null
+        if (primary(c) == XRAY) return if (xOk) XRAY else if (sbOk) SINGBOX else null
+        if (sbOk) return SINGBOX
+        if (xOk && (fallback(c) || !usable(c, SINGBOX))) return XRAY
+        return null
+    }
+
+    private fun wgWant(c: Context, conf: String, ov: String): String {
+        val mode = Plugins.wgMode(c)
+        return when {
+            ov == "wg" || ov == "awg" || ov == "xray" -> ov
+            mode == 1 -> "awg"
+            mode == 2 -> "wg"
+            Wg.isAwg(conf) -> "awg"
+            else -> "wg"
+        }
+    }
+
+    fun wgEngine(c: Context, conf: String, ov: String): String? = when (wgWant(c, conf, ov)) {
+        "awg" -> if (usable(c, AWG)) "awg" else null
+        "wg" -> if (usable(c, WG)) "wg" else null
+        else -> if (usable(c, XRAY)) "xray" else null
+    }
+
+    fun wgReason(c: Context, conf: String, ov: String): String = when (wgWant(c, conf, ov)) {
+        "awg" -> "Включите плагин AmneziaWG в плагинах"
+        "wg" -> "Включите плагин WireGuard в плагинах"
+        else -> "Для этого сервера выбрано ядро Xray, включите его в плагинах"
+    }
+
+    fun switchTo(c: Context, id: String) {
+        prefs(c).edit().putBoolean("on_$id", true).putString("primary", id).apply()
+    }
+
+    fun snapshot(c: Context): JSONObject {
+        val out = JSONObject()
+        val items = JSONArray()
+        fun add(id: String, name: String, description: String, core: Boolean) {
+            if (!Components.full && id in setOf(SINGBOX, XRAY, TUIC, AWG) && !present(c, id)) return
+            items.put(
+                JSONObject().put("id", id).put("name", name).put("description", description).put("core", core)
+                    .put("present", present(c, id)).put("enabled", enabled(c, id) && present(c, id))
+                    .put("primary", core && primary(c) == id)
+            )
+        }
+        add(SINGBOX, "sing-box", "Основное ядро по умолчанию: VLESS, VMess, Trojan, Shadowsocks. Нет XHTTP", true)
+        add(XRAY, "Xray", "Подхватывает то, что не поддерживает sing-box (например XHTTP)", true)
+        add(WG, "WireGuard", "Отдельный движок WireGuard. Не зависит от Xray и sing-box, включён по умолчанию", false)
+        add(AWG, "AmneziaWG", "Отдельный плагин для AmneziaWG-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
+        add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)
+        add(DPI, DPI_NAME, "Один общий сервер без выхода в сеть: обход DPI по принципу zapret и tg-ws-proxy", false)
+        out.put("list", items)
+        out.put("dpi", Dpi.status(c))
+        return out
+    }
+}

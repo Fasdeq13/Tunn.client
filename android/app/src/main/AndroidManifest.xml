@@ -17,14 +17,14 @@
     </queries>
 
     <application
-        android:name=".FasdeqApp"
+        android:name=".TunnApp"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="${appLabel}"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Fasdeq">
+        android:theme="@style/Theme.Tunn">
 
         <activity
             android:name=".MainActivity"
@@ -107,11 +107,11 @@
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|density|navigation|colorMode|fontScale|layoutDirection"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.Fasdeq"
+            android:theme="@style/Theme.Tunn"
             android:windowSoftInputMode="adjustResize" />
 
         <service
-            android:name=".FasdeqVpnService"
+            android:name=".TunnService"
             android:exported="false"
             android:process=":vpn"
             android:foregroundServiceType="systemExempted"
@@ -127,7 +127,7 @@
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".FasdeqTileService"
+            android:name=".TunnTileService"
             android:exported="true"
             android:icon="@drawable/ic_power"
             android:label="@string/tile_label"

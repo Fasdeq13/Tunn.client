@@ -1,4 +1,4 @@
-FasdeqPlugin.define("session-card", function (api) {
+TunnPlugin.define("session-card", function (api) {
   var body = api.h("div", { class: "sc-body" }, "—");
   var card = api.h("div", { class: "svc-card sc-card" }, api.h("div", { class: "svc-head" }, api.h("div", { class: "title" }, "Трафик за сессию")), body);
   api.addHomeCard(card);

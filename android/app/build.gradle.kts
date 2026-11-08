@@ -5,16 +5,16 @@ plugins {
 }
 
 android {
-    namespace = "app.fasdeq.vpn"
+    namespace = "tunn.client"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = (project.findProperty("app.id") as String?) ?: "app.fasdeq.vpn"
+        applicationId = (project.findProperty("app.id") as String?) ?: "tunn.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 37
-        versionName = (project.findProperty("app.vname") as String?) ?: "4.2"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 38
+        versionName = (project.findProperty("app.vname") as String?) ?: "4.3"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {

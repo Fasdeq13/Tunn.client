@@ -58,18 +58,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fasdeq-core"
-version = "4.2.0"
-dependencies = [
- "base64 0.22.1",
- "percent-encoding",
- "rand",
- "serde",
- "serde_json",
- "ureq",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -374,6 +362,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tunn-backend"
+version = "4.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "percent-encoding",
+ "rand",
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]

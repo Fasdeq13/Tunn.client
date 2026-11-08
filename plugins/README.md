@@ -46,7 +46,7 @@
 ## UI-плагин
 
 ```js
-FasdeqPlugin.define("my-plugin", function (api) {
+TunnPlugin.define("my-plugin", function (api) {
   api.addHomeCard(api.h("div", { class: "svc-card" }, "Привет"));
   api.addSettingsGroup("Мой плагин", [api.h("div", { class: "row" }, "Строка")]);
   api.onState(function (s) { /* s.status, s.rx, s.tx, s.servers ... */ });

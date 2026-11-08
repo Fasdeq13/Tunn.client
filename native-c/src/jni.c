@@ -2,7 +2,7 @@
 #include <string.h>
 #include "fqc.h"
 
-JNIEXPORT jstring JNICALL Java_app_fasdeq_vpn_NativeC_sha256(JNIEnv *env, jclass cls, jstring s) {
+JNIEXPORT jstring JNICALL Java_tunn_client_NativeC_sha256(JNIEnv *env, jclass cls, jstring s) {
     (void)cls;
     const char *u = (*env)->GetStringUTFChars(env, s, NULL);
     if (!u) return NULL;
@@ -12,7 +12,7 @@ JNIEXPORT jstring JNICALL Java_app_fasdeq_vpn_NativeC_sha256(JNIEnv *env, jclass
     return (*env)->NewStringUTF(env, hex);
 }
 
-JNIEXPORT jint JNICALL Java_app_fasdeq_vpn_NativeC_cidrContains(JNIEnv *env, jclass cls, jstring ranges, jstring ip) {
+JNIEXPORT jint JNICALL Java_tunn_client_NativeC_cidrContains(JNIEnv *env, jclass cls, jstring ranges, jstring ip) {
     (void)cls;
     const char *r = (*env)->GetStringUTFChars(env, ranges, NULL);
     const char *a = (*env)->GetStringUTFChars(env, ip, NULL);

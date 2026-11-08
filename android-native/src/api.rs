@@ -1,5 +1,5 @@
-use fasdeq_core::model::Server;
-use fasdeq_core::{importer, links, ping};
+use tunn_backend::model::Server;
+use tunn_backend::{importer, links, ping};
 use serde_json::{json, Value};
 
 pub fn parse_link(conf: &str) -> Value {

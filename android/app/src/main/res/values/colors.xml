@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="fasdeq_bg">#FFFFFBFF</color>
+    <color name="tunn_bg">#FFFFFBFF</color>
     <color name="icon_dark_bg">#FF0F1115</color>
     <color name="icon_light_bg">#FFF3F1FF</color>
     <color name="icon_you_bg">#FF5A3CF4</color>
