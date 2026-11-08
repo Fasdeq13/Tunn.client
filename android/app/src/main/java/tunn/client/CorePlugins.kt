@@ -18,7 +18,7 @@ object CorePlugins {
 
     private fun prefs(c: Context) = c.getSharedPreferences("core_plugins", Context.MODE_PRIVATE)
 
-    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", id != TUIC)
+    fun enabled(c: Context, id: String): Boolean = prefs(c).getBoolean("on_$id", true)
 
     fun deleted(c: Context, id: String): Boolean = prefs(c).getBoolean("del_$id", false)
 
@@ -131,7 +131,7 @@ object CorePlugins {
         add(XRAY, "Xray", "Подхватывает то, что не поддерживает sing-box (например XHTTP)", true)
         add(WG, "WireGuard", "Отдельный движок WireGuard. Не зависит от Xray и sing-box, включён по умолчанию", false)
         add(AWG, "AmneziaWG", "Отдельный плагин для AmneziaWG-конфигов. Не зависит от Xray и sing-box, включён по умолчанию", false)
-        add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, выключен по умолчанию", false)
+        add(TUIC, "TUIC", "Протокол TUIC (QUIC/UDP). Работает через ядро sing-box, включён по умолчанию", false)
         add(DPI, DPI_NAME, "Один общий сервер без выхода в сеть: обход DPI по принципу zapret и tg-ws-proxy", false)
         out.put("list", items)
         out.put("dpi", Dpi.status(c))

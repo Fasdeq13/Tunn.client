@@ -4,7 +4,7 @@ Android VPN-клиент. Логика на Rust и C, Kotlin только дл�
 
 ## Корень
 - `tools/pack.py`, `tools/test_pack.py` сборка и подпись пакетов `.Update` / `.fix`.
-- `fix.sh` собирает только исправление: компилирует, сравнивает классы с `dist/classes-4.3-full` и делает `dist/Tunn-4.3.<N>.fix` (`./fix.sh 1`).
+- `fix.sh` собирает только исправление: компилирует, сравнивает классы с `dist/classes-4.3-full` и делает `dist/Tunn-4.3.<N>.fix` (`./fix.sh`, номер подбирается сам).
 - `build.sh` собирает всё (Rust, ядра, APK/AAB); версия в переменной `VERSION`.
 - `shell.nix` окружение сборки на NixOS.
 - `fdroid/tunn.client.yml`, `fdroid/README.md` метаданные F-Droid.

@@ -250,6 +250,14 @@ class TunnService : VpnService() {
         true
     }
 
+    private fun explain(lines: List<String>): String {
+        val key = lines.firstOrNull { it.startsWith("panic:") || it.startsWith("fatal error:") || it.contains("FATAL") }
+            ?: lines.firstOrNull { it.contains("ERROR") || it.contains("error") }
+            ?: lines.firstOrNull()
+            ?: "без вывода"
+        return key.replace(Regex("\\u001b\\[[0-9;]*m"), "").trim().take(240)
+    }
+
     private fun startChild(path: String, outbound: JSONObject, singbox: Boolean = false): Int {
         killOrphan()
         val port = ServerSocket(0).use { it.localPort }
@@ -275,7 +283,7 @@ class TunnService : VpnService() {
                 process.inputStream.bufferedReader().forEachLine {
                     synchronized(tail) {
                         tail.add(it)
-                        if (tail.size > 8) tail.removeAt(0)
+                        if (tail.size > 60) tail.removeAt(0)
                     }
                 }
             } catch (e: Throwable) {
@@ -284,8 +292,10 @@ class TunnService : VpnService() {
         val deadline = SystemClock.elapsedRealtime() + 7000
         while (SystemClock.elapsedRealtime() < deadline) {
             if (!alive(process)) {
-                val last = synchronized(tail) { tail.lastOrNull() } ?: "без вывода"
-                throw IllegalStateException("Ядро $label завершилось: $last")
+                Thread.sleep(150)
+                val lines = synchronized(tail) { ArrayList(tail) }
+                for (l in lines) J.e("core", l.take(300))
+                throw IllegalStateException("Ядро $label завершилось: " + explain(lines))
             }
             try {
                 Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 200) }
