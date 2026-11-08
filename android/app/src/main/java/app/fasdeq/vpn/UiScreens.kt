@@ -234,7 +234,7 @@ fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, shape: Int = 
     val pressed = src.collectIsPressedAsState().value
     val press = animateFloatAsState(if (pressed) 0.92f else 1f, spring(dampingRatio = 0.5f, stiffness = 450f), label = "press").value
     val speed = animateFloatAsState(if (busy) 3.2f else if (on) 0.45f else 0.2f, tween(900), label = "speed")
-    val ampBase = animateFloatAsState(if (busy) ampK * 1.4f else if (on) 0.05f else ampK, tween(700), label = "amp")
+    val ampBase = animateFloatAsState(if (busy) 0.04f else if (on) 0.025f else 0.03f, tween(700), label = "amp")
     val bg = animateColorAsState(
         if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
         tween(600), label = "bg"
@@ -269,11 +269,11 @@ fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, shape: Int = 
         Canvas(Modifier.size(halo)) {
             val w = this.size.width
             val c = w / 2f
-            val r0 = size.toPx() / 2f * 0.94f
+            val r0 = size.toPx() / 2f * 0.9f
             val ph = phase.value
-            val amp = ampBase.value + (if (busy) 0.012f * sin(ph * 3f) else 0.006f * sin(ph * 2f))
+            val amp = ampBase.value.coerceAtMost(0.04f)
             if (on) {
-                drawPath(cookie(c, c, r0 * 1.17f, ampK * 1.2f, lobes, -ph * 0.8f, shape), haloColor.copy(alpha = 0.12f))
+                drawPath(cookie(c, c, r0 * 1.12f, 0.03f, lobes, -ph * 0.8f, shape), haloColor.copy(alpha = 0.12f))
             }
             val b = burst.value
             if (b < 1f) {
@@ -284,7 +284,7 @@ fun PowerButton(status: String, size: androidx.compose.ui.unit.Dp, shape: Int = 
                 )
             }
             drawPath(cookie(c, c, r0, amp, lobes, ph, shape), bg)
-            drawCircle(Color.White.copy(alpha = 0.07f), r0 * 0.62f, Offset(c - r0 * 0.12f, c - r0 * 0.16f))
+            drawCircle(Color.White.copy(alpha = 0.05f), r0 * 0.7f, Offset(c, c))
             val ic = r0 * 0.5f
             val sw = ic * 0.17f
             drawArc(
@@ -619,7 +619,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_refresh, "Журнал и диагностика", "Переподключение, автовыбор, журнал подключения") { go("journal") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.1, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.2, создатели, канал") { go("about") }
     }
 }
 

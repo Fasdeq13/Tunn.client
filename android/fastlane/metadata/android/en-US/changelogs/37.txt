@@ -1,0 +1,1 @@
+Fixed: ping and service checks no longer interfere, ping is steadier (median of three). Calmer centered power button. Rule plugins and themes selectable in settings with catalog install.

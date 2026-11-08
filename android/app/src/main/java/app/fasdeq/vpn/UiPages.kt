@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -118,9 +119,55 @@ private fun Tune(a: ComposeActivity, s: Snap, key: String, title: String, min: F
 }
 
 @Composable
+fun Fold(title: String, startOpen: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(startOpen) }
+    Section(title) {
+        BaseRow(if (open) "Свернуть" else "Развернуть", null, onClick = { open = !open })
+        if (open) content()
+    }
+}
+
+@Composable
+fun LookModules(a: ComposeActivity, s: Snap, fluentOn: Boolean) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Themes.rev
+    UiNative.rev
+    val themeOn = Themes.activeId(ctx).isNotEmpty()
+    val soKey = UiNative.activeKey(ctx)
+    Section("Модули оформления") {
+        Text(
+            "Каждый эффект включается и выключается отдельно. Выключенный модуль не тратит ресурсы.",
+            Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        SwitchRow("Liquid Glass", "Стекло, размытие и линза", s.glass) {
+            a.set("glass", it)
+            if (it) a.set("tune.fluent", 0.0)
+        }
+        SwitchRow("Fluent", "Mica и плоские карточки", fluentOn, enabled = !s.glass) { a.set("tune.fluent", if (it) 1.0 else 0.0) }
+        SwitchRow("Тема-плагин", if (themeOn) "Активна: " + Themes.activeId(ctx) else "Не выбрана, ниже список", themeOn, enabled = themeOn) { if (!it) Themes.select(ctx, "") }
+        SwitchRow("Интерфейс-плагин (.so)", if (soKey.isEmpty()) "Не выбран" else "Включён", soKey.isNotEmpty(), enabled = soKey.isNotEmpty()) { if (!it) UiNative.setActive(ctx, "") }
+        SwitchRow("Своя картинка фона", null, s.glassBg != 0L, enabled = s.glassBg != 0L) { if (!it) a.call("clearGlassBg") }
+        SwitchRow("Свой цвет фона", null, s.bgOn, enabled = !s.glass) { a.set("bgCustom", it) }
+        SwitchRow("Вращение кнопки", "Анимация кнопки питания", s.btnSpin) { a.set("btnSpin", it) }
+        BaseRow("Отключить все модули", "Вернуть стандартный Material You без тем, интерфейсов и фона", onClick = {
+            a.set("glass", false)
+            a.set("tune", org.json.JSONObject())
+            a.set("bgCustom", false)
+            a.set("dynamic", true)
+            Themes.select(ctx, "")
+            UiNative.setActive(ctx, "")
+            if (s.glassBg != 0L) a.call("clearGlassBg")
+        })
+    }
+}
+
+
+@Composable
 fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Оформление", onBack) {
         val fluentOn = !s.glass && s.t("fluent", 0f) > 0.5f
+        LookModules(a, s, fluentOn)
         Section("Стиль") {
             ChoiceRow("Оформление", listOf("Material You", "Liquid Glass", "Fluent"), if (s.glass) 1 else if (fluentOn) 2 else 0) {
                 a.set("glass", it == 1)
@@ -160,7 +207,7 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
                 }
             }
         }
-        Section("Фон") {
+        Fold("Фон") {
             BaseRow("Своя картинка", "Под всем приложением, в том числе на экране VPN. Сейчас: " + (if (s.glassBg != 0L) "своя картинка" else if (s.glass) "стандартный фон" else "нет"), onClick = {
                 a.call("pickGlassBg") { r ->
                     val e = r.optString("error")
@@ -181,37 +228,38 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
             }
         }
         if (s.glass) {
-            Section("Стекло") {
+            Fold("Стекло") {
                 Tune(a, s, "gBlur", "Размытие под стеклом", 0f, 100f, 50f, "%")
                 SliderRow("Степень стекла", s.glassLevel.toFloat(), 0f, 100f, if (s.glassLevel < 35) "матовое" else if (s.glassLevel < 70) "среднее" else "прозрачное") { a.set("glassLevel", it.toInt()) }
                 Tune(a, s, "gTint", "Плотность подложки", 0f, 100f, 50f, "%")
                 Tune(a, s, "gSat", "Насыщенность фона", 0f, 250f, 155f, "%")
             }
-            Section("Линза и свет") {
+            Fold("Линза и свет") {
                 Tune(a, s, "gRefr", "Преломление", 0f, 200f, 100f, "%")
                 Tune(a, s, "gEdge", "Ширина кромки", 4f, 40f, 18f, " dp")
                 Tune(a, s, "gDisp", "Цветовая дисперсия", 0f, 200f, 100f, "%")
                 Tune(a, s, "gSpec", "Блики и свечение", 0f, 200f, 100f, "%")
             }
-            Section("Слияние и капли") {
+            Fold("Слияние и капли") {
                 Tune(a, s, "gMerge", "Дистанция слияния панелей", 0f, 30f, 10f, " dp")
                 Tune(a, s, "gDrop", "Сила линзы капли", 50f, 250f, 100f, "%")
             }
         } else {
-            Section("Material You") {
+            Fold("Material You") {
                 ChoiceRow("Стиль карточек", listOf("Тональные", "Контурные", "Плоские"), s.t("cardStyle", 0f).toInt()) { a.set("tune.cardStyle", it.toDouble()) }
                 Tune(a, s, "mSat", "Насыщенность цвета", 0f, 200f, 100f, "%", enabled = !s.dynamic && !s.bgOn)
                 Tune(a, s, "mSurf", "Контраст поверхностей", 0f, 250f, 100f, "%", enabled = !s.dynamic && !s.bgOn)
             }
         }
         ThemePacks(a)
-        Section("Форма и размеры") {
+        CatalogPicker(a, "theme")
+        Fold("Форма и размеры") {
             Tune(a, s, "uiRadius", "Скругление", 40f, 160f, 100f, "%")
             Tune(a, s, "uiSpace", "Отступы", 60f, 170f, 100f, "%")
             Tune(a, s, "uiFont", "Размер текста", 80f, 130f, 100f, "%")
             BaseRow("Сбросить тонкую настройку", "Вернуть все эти ползунки к значениям по умолчанию", onClick = { a.set("tune", org.json.JSONObject()) })
         }
-        Section("Кнопка питания") {
+        Fold("Кнопка питания") {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                 PowerButton(s.status, 120.dp, s.btnShape, s.btnLobes, s.btnAmp, s.btnSpin) {}
             }
@@ -221,7 +269,7 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
             SliderRow("Размер", s.btnSize.toFloat(), 140f, 260f, "${s.btnSize} dp") { a.set("btnSize", it.toInt()) }
             SwitchRow("Вращение", "Кнопка медленно вращается", s.btnSpin) { a.set("btnSpin", it) }
         }
-        Section("Значок") {
+        Fold("Значок") {
             BaseRow("Иконка приложения", "Варианты и своя картинка", { open(Sheet.IconPick) })
         }
     }
@@ -230,8 +278,31 @@ fun LookPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> U
 @Composable
 fun ConnectPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -> Unit) {
     SubPage("Подключение", onBack) {
-        Section("Основное") {
+        Section("Модули подключения") {
+            Text(
+                "Каждая функция включается отдельно. Выключенная не работает и не тратит ресурсы.",
+                Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             SwitchRow("Подключаться при запуске", null, s.autoConnect) { a.set("autoConnect", it) }
+            SwitchRow("Автопереподключение", "Поднять туннель заново, если он оборвался", s.autoReconnect) { a.set("autoReconnect", it) }
+            SwitchRow("Запасной сервер", "Перейти на лучший по пингу, если текущий не отвечает", s.autoFailover) { a.set("autoFailover", it) }
+            SwitchRow("Xray для неподдерживаемых серверов", "XHTTP и другое, что не умеет sing-box. Выключите, и такие серверы станут неактивными", s.xrayFallback) { a.set("xrayFallback", it); a.reapplyIfOn() }
+            SwitchRow("Проверять пинг автоматически", null, s.autoPing) { a.set("autoPing", it) }
+            SwitchRow("Проверять сервисы автоматически", "Discord, Telegram, YouTube", s.autoCheck) { a.set("autoCheck", it) }
+            BaseRow("Отключить все модули", "Выключить автоматику и вернуть сетевые настройки по умолчанию", onClick = {
+                a.set("autoConnect", false)
+                a.set("autoReconnect", false)
+                a.set("autoFailover", false)
+                a.set("autoPing", false)
+                a.set("autoCheck", false)
+                a.set("tuning.ipv6", true)
+                for (k in listOf("sniff", "lan", "quic", "unm", "mux")) a.set("tuning." + k, false)
+                a.set("tuning.am", 0)
+                a.reapplyIfOn()
+            })
+        }
+        Section("Основное") {
             BaseRow(
                 "Работа в фоне",
                 "Если VPN сам отключается через время (Tecno, Xiaomi, Huawei, Samsung): разрешите Tunn работать без ограничений батареи и закрепите приложение в списке недавних",
@@ -239,14 +310,10 @@ fun ConnectPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -
             )
             ChoiceRow("DNS", DnsPresets.names, s.dns) { a.set("dns", it) }
             if (s.dns == 4) TextRow("Свои DNS через запятую", s.dnsCustom, "1.1.1.1, 8.8.8.8") { a.set("dnsCustom", it) }
-            SwitchRow(
-                "Xray для неподдерживаемых серверов",
-                "sing-box ведёт всё, что умеет. Остальное (XHTTP и др.) идёт через Xray. Выключите, и такие серверы станут неактивными",
-                s.xrayFallback
-            ) { a.set("xrayFallback", it); a.reapplyIfOn() }
             SliderRow("MTU", s.mtu.toFloat(), 1280f, 1500f, 21, { it.toInt().toString() }) { a.set("mtu", it.toInt()) }
         }
-        Section("Низкоуровневые") {
+        CatalogPicker(a, "plugin")
+        Fold("Низкоуровневые") {
             SwitchRow("IPv6", "Выключите, если сайты зависают", s.ipv6) { a.set("tuning.ipv6", it) }
             SwitchRow("Sniffing", "Определять домен по HTTP, TLS и QUIC", s.sniff) { a.set("tuning.sniff", it) }
             SwitchRow("Блокировать QUIC", "Браузеры перейдут на TCP", s.quic) { a.set("tuning.quic", it) }
@@ -254,7 +321,7 @@ fun ConnectPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -
             SwitchRow("Сеть без лимита", "Система не считает трафик VPN мобильным", s.unm) { a.set("tuning.unm", it) }
             SwitchRow("Mux", "Не работает с XTLS Vision", s.mux) { a.set("tuning.mux", it) }
         }
-        Section("Приложения") {
+        Fold("Приложения", true) {
             ChoiceRow("Через VPN идут", listOf("Все", "Исключить", "Только"), s.appMode) { a.set("tuning.am", it) }
             if (s.appMode != 0) {
                 val n = s.apps.split(',', '\n', ' ').count { it.isNotBlank() }
@@ -300,7 +367,7 @@ fun PluginsPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -
                 )
             }
         }
-        Section("Версии ядер") {
+        Fold("Версии ядер") {
             BaseRow("sing-box", "Выбрать или скачать версию", { open(Sheet.SbCores) })
             BaseRow("Xray", "Встроенное, своё или скачать", { open(Sheet.XrayCores) })
         }
@@ -333,13 +400,13 @@ fun PluginsPage(a: ComposeActivity, s: Snap, open: (Sheet) -> Unit, onBack: () -
 @Composable
 fun PingPage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
     SubPage("Пинг и сервисы", onBack) {
-        Section("Проверка пинга") {
+        Fold("Проверка пинга", true) {
             ChoiceRow("Способ", listOf("Авто", "TCP", "UDP", "Оба", "ICMP"), s.pingMode) { a.set("pingMode", it) }
             ChoiceRow("Таймаут", listOf("2 с", "4 с", "8 с"), s.pingTimeout) { a.set("pingTimeout", it) }
             SwitchRow("Проверять автоматически", null, s.autoPing) { a.set("autoPing", it) }
             SwitchRow("Сортировать по пингу", null, s.sortPing) { a.set("sortPing", it) }
         }
-        Section("Сервисы") {
+        Fold("Сервисы", true) {
             SwitchRow("Проверять автоматически", "Discord, Telegram и YouTube через каждый сервер, пока VPN включён", s.autoCheck) { a.set("autoCheck", it) }
             if (s.autoCheck) SliderRow("Интервал", s.checkInterval, 5f, 240f, 46, { it.toInt().toString() + " мин" }) { a.set("checkInterval", it.toDouble()) }
             BaseRow("Проверить сейчас", null, { a.call("checkServices"); a.say("Проверяю сервисы…") })
@@ -380,7 +447,8 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 4.1 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 4.2 · создатель fasdeq13", {
+                // 3 taps within 5 seconds
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
                 tapTimes.removeAll { now - it > 5_000L }
@@ -566,6 +634,69 @@ private fun SetupCheck(text: String, value: Boolean, onChange: (Boolean) -> Unit
     Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Checkbox(value, onChange)
         Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+
+@androidx.compose.runtime.Composable
+fun CatalogPicker(a: ComposeActivity, kind: String) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var stamp by remember { mutableStateOf(0) }
+    var msg by remember { mutableStateOf("") }
+    Themes.rev
+    stamp
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (Store.items == null) {
+            val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
+            if (e != null) msg = e
+            stamp++
+        }
+    }
+    val theme = kind == "theme"
+    val remote = Store.items?.filter { it.kind == kind } ?: emptyList()
+    val localIds = if (theme) Themes.list(ctx).map { it.id }.toSet() else Plugins.list(ctx).filter { "rules" in it.kinds }.map { it.id }.toSet()
+    Section(if (theme) "Каталог тем" else "Плагины правил") {
+        if (!theme) {
+            Plugins.list(ctx).filter { "rules" in it.kinds }.forEach { p ->
+                val on = Plugins.enabled(ctx, p.key)
+                SwitchRow(p.name + "  " + p.version, p.manifest.optString("description").ifEmpty { null }, on) {
+                    Plugins.setEnabled(ctx, p.key, it)
+                    stamp++
+                }
+            }
+            Text("Правила применяются при следующем подключении.", Modifier.padding(horizontal = 20.dp, vertical = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        remote.filter { it.id !in localIds }.forEach { item ->
+            androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, style = MaterialTheme.typography.bodyLarge)
+                    if (item.description.isNotBlank()) Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(enabled = Store.busy == null, onClick = {
+                    scope.launch {
+                        msg = ""
+                        val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.install(ctx, item) }
+                        if (e != null) msg = e else {
+                            if (theme) Themes.select(ctx, item.id)
+                            else Plugins.list(ctx).filter { it.id == item.id }.forEach { Plugins.setEnabled(ctx, it.key, true) }
+                            a.say(item.name + if (theme) " применена" else " включён")
+                        }
+                        stamp++
+                    }
+                }) { Text(if (theme) "Скачать и применить" else "Скачать") }
+            }
+        }
+        if (remote.isEmpty() && Store.items == null && msg.isEmpty()) Text("Загружаю каталог…", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall)
+        if (msg.isNotEmpty()) Text(msg, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = {
+            scope.launch {
+                msg = ""
+                val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
+                if (e != null) msg = e
+                stamp++
+            }
+        }, Modifier.padding(horizontal = 12.dp)) { Text("Обновить каталог") }
     }
 }
 

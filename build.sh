@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-VERSION="4.1"
+VERSION="4.2"
 TARGET="android"
 [ "${1:-}" = android ] && shift
 VARIANT="${1:-all}"

@@ -160,6 +160,25 @@ object Ping {
             .let { if (it.best() == Int.MAX_VALUE) PingResult(udp = u, icmp = box[1]) else it }
     }
 
+    fun stable(server: Server, mode: Int, timeout: Int): PingResult {
+        val runs = ArrayList<PingResult>(3)
+        for (n in 0 until 3) {
+            val r = measure(server, mode, timeout)
+            if (r.best() != Int.MAX_VALUE) runs.add(r)
+            if (n == 0 && r.best() == Int.MAX_VALUE) {
+                val again = measure(server, mode, timeout)
+                if (again.best() == Int.MAX_VALUE) return r
+                runs.add(again)
+            }
+        }
+        if (runs.isEmpty()) return measure(server, mode, timeout)
+        fun med(sel: (PingResult) -> Int?): Int? {
+            val v = runs.mapNotNull(sel).filter { it > 0 }.sorted()
+            return if (v.isEmpty()) null else v[v.size / 2]
+        }
+        return runs[0].copy(tcp = med { it.tcp }, udp = med { it.udp }, icmp = med { it.icmp }, tun = med { it.tun })
+    }
+
     fun measure(server: Server, mode: Int, timeout: Int): PingResult {
         if (try { Plugins.forConf(FasdeqApp.appContext, server.conf) != null } catch (e: Throwable) { false }) return measurePlugin(server, mode, timeout)
         if (server.conf.trim().startsWith("tuic://", ignoreCase = true)) return measurePlugin(server, mode, timeout)

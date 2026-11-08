@@ -450,13 +450,12 @@ class AppState(private val app: Application) {
                 }
             }
             try {
-                try { ping(list).join() } catch (e: Exception) { }
                 val ordered = list.sortedBy { pings[it.id]?.best()?.takeIf { v -> v > 0 } ?: Int.MAX_VALUE }
                 ordered.map { server ->
                     launch(Dispatchers.IO) {
                         gate.withPermit {
                             val pg = pings[server.id]
-                            val deadPing = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE && !Wg.isConf(server.conf)
+                            val deadPing = pg != null && !pg.busy && pg.best() == Int.MAX_VALUE && (pingFails[server.id] ?: 0) >= 3 && !Wg.isConf(server.conf)
                             val outbound = if (deadPing) null else synchronized(probeLock) { probeOutboundFor(server) }
                             val config = outbound?.let {
                                 try {
@@ -923,12 +922,12 @@ class AppState(private val app: Application) {
         val timeout = PingOptions.timeouts[pingTimeout.coerceIn(0, PingOptions.timeouts.size - 1)]
         list.forEach { pings[it.id] = (lastGoodPing[it.id] ?: PingResult()).copy(busy = true) }
         return scope.launch {
-            val gate = Semaphore(16)
+            val gate = Semaphore(8)
             list.map { server ->
                 launch(Dispatchers.IO) {
                     gate.withPermit {
                         val result = try {
-                            Ping.measure(server, mode, timeout)
+                            Ping.stable(server, mode, timeout)
                         } catch (e: Exception) {
                             PingResult(tcp = Ping.FAIL)
                         }
