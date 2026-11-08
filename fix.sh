@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-VERSION="4.3"
+VERSION="4.4"
 CACHE="${FQ_CACHE:-$ROOT/.fqbuild}"
 GRADLE_VERSION="8.11.1"
 BASE="dist/classes-$VERSION-full"
@@ -17,11 +17,16 @@ if [ -z "${TUNN_FHS:-}" ] && [ -e /etc/NIXOS ]; then
   exec nix-shell "$ROOT/shell.nix" --run "$(printf '%q ' "$ROOT/fix.sh" "$@")"
 fi
 
+MODE="${1:-fix}"
 last="$(ls dist/Tunn-$VERSION.*.fix 2>/dev/null | sed -E "s/.*Tunn-$VERSION\.([0-9]+)\.fix/\1/" | sort -n | tail -1 || true)"
-SERIAL="${1:-$(( ${last:-0} + 1 ))}"
+SERIAL="$(( ${last:-0} + 1 ))"
+[ "${1:-}" -gt 0 ] 2>/dev/null && SERIAL="$1"
+[ "$MODE" = base ] && SERIAL=0
 
-[ -d "$BASE" ] || die "нет $BASE, выполните ./build.sh"
-[ -f "$HOME/.tunn/pack.pem" ] || die "нет ключа, выполните python3 tools/pack.py keygen"
+if [ "$MODE" != base ]; then
+  [ -d "$BASE" ] || die "нет $BASE: ./fix.sh base <папка старого Tunn>"
+  [ -f "$HOME/.tunn/pack.pem" ] || die "нет ключа, выполните python3 tools/pack.py keygen"
+fi
 [ -f android/local.properties ] || die "выполните ./build.sh"
 
 JDK=""
@@ -48,16 +53,31 @@ else
 fi
 [ -x "$GRADLE" ] || die "gradle не найден, выполните ./build.sh"
 
-(cd android && "$GRADLE" :app:compileFullReleaseKotlin :app:compileFullReleaseJavaWithJavac --no-daemon -q)
+collect() {
+  rm -rf "$1"
+  mkdir -p "$1"
+  for d in android/app/build/tmp/kotlin-classes/full* android/app/build/intermediates/javac/full*/classes; do
+    [ -d "$d" ] && cp -r "$d/." "$1/"
+  done
+}
 
-rm -rf "$NEW"
-mkdir -p "$NEW"
-for d in android/app/build/tmp/kotlin-classes/full* android/app/build/intermediates/javac/full*/classes; do
-  [ -d "$d" ] && cp -r "$d/." "$NEW/"
-done
+compile() {
+  (cd android && "$GRADLE" :app:compileFullReleaseKotlin :app:compileFullReleaseJavaWithJavac --no-daemon -q)
+}
 
+if [ "$MODE" = base ]; then
+  OLD="${2:-}"
+  JAVA=android/app/src/main/java
+  [ -d "$OLD/$JAVA/tunn" ] || die "укажите папку старого Tunn, например ./fix.sh base ~/old/Tunn"
+  rm -rf "$CACHE/java-current"
+  mv "$JAVA/tunn" "$CACHE/java-current"
+  trap 'rm -rf "$JAVA/tunn"; mv "$CACHE/java-current" "$JAVA/tunn"' EXIT
+  cp -r "$OLD/$JAVA/tunn" "$JAVA/tunn"
+  compile
+  collect "$BASE"
+  exit 0
+fi
+
+compile
+collect "$NEW"
 python3 tools/pack.py fix --old-classes "$BASE" --new-classes "$NEW" --version "$VERSION" --serial "$SERIAL" --out dist
-<<<<<<< HEAD
-=======
-say "готово: dist/Tunn-$VERSION.$SERIAL.fix"
->>>>>>> a4013480adaa6e599fd5308f49dac49e67c3e0a2

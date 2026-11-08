@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-VERSION="4.3"
+VERSION="4.4"
 TARGET="android"
 [ "${1:-}" = android ] && shift
 VARIANT="${1:-all}"
@@ -151,6 +151,10 @@ build_android() {
     gradle="$gdir/bin/gradle"
   fi
 
+  if [ -f "$HOME/.tunn/pack.pem" ] && [ ! -f android/app/src/main/assets/tunn_pack.pub ]; then
+    python3 tools/pack.py keygen >/dev/null
+  fi
+
   local args=(-Papp.vcode="$(( $(date +%s) / 60 ))")
   if [ "$MODE" = release ] || [ "$MODE" = play ]; then
     local ks="${KS_PATH:-}" kpass="${KS_PASS:-}" kalias="${KS_ALIAS:-}"
@@ -201,10 +205,12 @@ build_android() {
     if [ -n "$asg" ] && [ "$MODE" != debug ]; then "$asg" verify --print-certs "$apk" | head -3 || die "APK signature check failed"; fi
     cp "$apk" "dist/Tunn-android-$VERSION-$v.apk"
     say "APK: $ROOT/dist/Tunn-android-$VERSION-$v.apk"
-    rm -rf "dist/classes-$VERSION-$v"; mkdir -p "dist/classes-$VERSION-$v"
-    for d in android/app/build/tmp/kotlin-classes/${v}* android/app/build/intermediates/javac/${v}*/classes; do
-      [ -d "$d" ] && cp -r "$d/." "dist/classes-$VERSION-$v/"
-    done
+    if [ ! -d "dist/classes-$VERSION-$v" ]; then
+      mkdir -p "dist/classes-$VERSION-$v"
+      for d in android/app/build/tmp/kotlin-classes/${v}* android/app/build/intermediates/javac/${v}*/classes; do
+        [ -d "$d" ] && cp -r "$d/." "dist/classes-$VERSION-$v/"
+      done
+    fi
     if [ -f "$HOME/.tunn/pack.pem" ]; then
       python3 tools/pack.py update --apk "dist/Tunn-android-$VERSION-$v.apk" --version "$VERSION" --out dist || say "pack: Update not built"
     else

@@ -627,7 +627,7 @@ fun SettingsList(a: ComposeActivity, s: Snap, onBack: () -> Unit, go: (String) -
         CategoryRow(R.drawable.ic_refresh, "Журнал и диагностика", "Переподключение, автовыбор, журнал подключения") { go("journal") }
         CategoryRow(R.drawable.ic_person, "Подписки", "Под кого маскироваться, HWID") { go("subs") }
         if (!BuildConfig.FDROID) CategoryRow(R.drawable.ic_refresh, "Обновления", "Проверка новых версий") { go("updates") }
-        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.3, создатели, канал") { go("about") }
+        CategoryRow(R.drawable.ic_info, "О приложении", "Tunn 4.4, создатели, канал") { go("about") }
     }
 }
 

@@ -18,14 +18,20 @@ def run(*a, **k):
     return subprocess.run(a, check=True, **k)
 
 
+def export_pub(key=KEY, pub=PUB):
+    os.makedirs(os.path.dirname(pub), exist_ok=True)
+    run("openssl", "ec", "-in", key, "-pubout", "-outform", "DER", "-out", pub, stderr=subprocess.DEVNULL)
+
+
 def keygen(key=KEY, pub=PUB):
     os.makedirs(os.path.dirname(key), exist_ok=True)
     if os.path.exists(key):
-        sys.exit("ключ уже есть: " + key)
+        export_pub(key, pub)
+        print("ключ уже есть, публичный ключ восстановлен:", os.path.abspath(pub))
+        return
     run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", key)
     os.chmod(key, 0o600)
-    os.makedirs(os.path.dirname(pub), exist_ok=True)
-    run("openssl", "ec", "-in", key, "-pubout", "-outform", "DER", "-out", pub, stderr=subprocess.DEVNULL)
+    export_pub(key, pub)
     print("приватный ключ:", key)
     print("публичный ключ:", os.path.abspath(pub), "(пересоберите APK, чтобы приложение принимало пакеты)")
 

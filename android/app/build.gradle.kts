@@ -13,8 +13,8 @@ android {
         applicationId = (project.findProperty("app.id") as String?) ?: "tunn.client"
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 38
-        versionName = (project.findProperty("app.vname") as String?) ?: "4.3"
+        versionCode = (project.findProperty("app.vcode") as String?)?.toInt() ?: 39
+        versionName = (project.findProperty("app.vname") as String?) ?: "4.4"
         buildConfigField("boolean", "FDROID", (project.findProperty("app.fdroid") != null).toString())
         manifestPlaceholders["appLabel"] = (project.findProperty("app.label") as String?) ?: "Tunn"
         ndk {

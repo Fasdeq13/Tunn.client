@@ -4,7 +4,7 @@ Android VPN-клиент. Логика на Rust и C, Kotlin только дл�
 
 ## Корень
 - `tools/pack.py`, `tools/test_pack.py` сборка и подпись пакетов `.Update` / `.fix`.
-- `fix.sh` собирает только исправление: компилирует, сравнивает классы с `dist/classes-4.3-full` и делает `dist/Tunn-4.3.<N>.fix` (`./fix.sh`, номер подбирается сам).
+- `fix.sh` собирает только исправление: компилирует, сравнивает классы с `dist/classes-4.4-full` и делает `dist/Tunn-4.3.<N>.fix` (`./fix.sh`, номер подбирается сам); `./fix.sh base <старый Tunn>` пересобирает базовые классы из старых исходников.
 - `build.sh` собирает всё (Rust, ядра, APK/AAB); версия в переменной `VERSION`.
 - `shell.nix` окружение сборки на NixOS.
 - `fdroid/tunn.client.yml`, `fdroid/README.md` метаданные F-Droid.
@@ -82,8 +82,8 @@ Android VPN-клиент. Логика на Rust и C, Kotlin только дл�
 
 ## Формат обновлений Tunn (меняет код без установки APK)
 Файлы кладутся в GitHub Release. Оба типа zip, внутри `manifest.json`, `manifest.sig` и файлы.
-- `Tunn-<версия>.Update` (например `Tunn-4.3.Update`): весь код приложения. Содержит `dex/classesN.dex` и `lib/<abi>/libtunn_service.so`; полностью перекрывает код APK. Может нести `plugins/` и `themes/`.
-- `Tunn-<версия>.<номер>.fix` (например `Tunn-4.3.1.fix`): точечное исправление отдельных классов (`dex/fixN.dex`), ставится поверх `.Update` или APK той же версии 4.3, номера возрастают. Может нести `.so`, `plugins/`, `themes/`.
+- `Tunn-<версия>.Update` (например `Tunn-4.4.Update`): весь код приложения. Содержит `dex/classesN.dex` и `lib/<abi>/libtunn_service.so`; полностью перекрывает код APK. Может нести `plugins/` и `themes/`.
+- `Tunn-<версия>.<номер>.fix` (например `Tunn-4.4.1.fix`): точечное исправление отдельных классов (`dex/fixN.dex`), ставится поверх `.Update` или APK той же версии 4.4, номера возрастают. Может нести `.so`, `plugins/`, `themes/`.
 - `manifest.json`: `format: 2`, `kind`, `version`, `shell` (уровень оболочки Layer.SHELL), `files: [{path, sha256}]`. `manifest.sig` подпись ECDSA P-256/SHA-256, публичный ключ в `assets/tunn_pack.pub`. Без верной подписи пакет отклоняется.
 - Применяется при следующем запуске: Layer ставит dex перед dex APK. Если после слоя три запуска подряд не дожили до 20 секунд, слой отключается (`state.bad`) и работает код APK.
 - Не обновляются: `TunnApp`, `Layer`, манифест, ресурсы, библиотеки внутри APK (Compose, libv2ray). Для них нужен новый APK.

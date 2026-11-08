@@ -449,7 +449,7 @@ fun AboutPage(a: ComposeActivity, onBack: () -> Unit) {
         var egg by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val ctx = androidx.compose.ui.platform.LocalContext.current
         Section("Tunn") {
-            BaseRow("Tunn", "Версия 4.3 · создатель fasdeq13", {
+            BaseRow("Tunn", "Версия 4.4 · создатель fasdeq13", {
                 // 3 taps within 5 seconds
                 val now = android.os.SystemClock.elapsedRealtime()
                 tapTimes.add(now)
