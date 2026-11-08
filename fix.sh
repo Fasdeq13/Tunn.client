@@ -58,4 +58,4 @@ done
 
 say "пакет исправления $VERSION.$SERIAL"
 python3 tools/pack.py fix --old-classes "$BASE" --new-classes "$NEW" --version "$VERSION" --serial "$SERIAL" --out dist
-say "готово: dist/Tunn-$VERSION.$SERIAL.fix, выложите его в релиз $VERSION"
+say "готово: dist/Tunn-$VERSION.$SERIAL.fix"
