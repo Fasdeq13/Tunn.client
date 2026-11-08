@@ -747,13 +747,13 @@ class AppState(private val app: Application) {
         val known = HashMap<String, Int>()
         val byName = HashMap<String, Int>()
         servers.forEachIndexed { i, s ->
-            known.putIfAbsent(Links.identity(s.conf), i)
+            known.putIfAbsent(s.group + "\u0001" + Links.identity(s.conf), i)
             byName.putIfAbsent(s.group + "|" + s.name + "|" + s.endpoint, i)
         }
         for (item in items) {
             try {
                 val parsed = Plugins.describe(app, item.link) ?: Links.parse(item.link)
-                val key = Links.identity(item.link)
+                val key = item.group.trim() + "\u0001" + Links.identity(item.link)
                 var existing = known[key] ?: -1
                 if (existing < 0 && item.group.isNotBlank() && parsed.name.isNotBlank()) {
                     existing = byName[item.group.trim() + "|" + parsed.name + "|" + parsed.endpoint] ?: -1

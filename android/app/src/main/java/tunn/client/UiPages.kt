@@ -119,21 +119,18 @@ private fun Tune(a: ComposeActivity, s: Snap, key: String, title: String, min: F
 }
 
 @Composable
-fun Fold(title: String, startOpen: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
-    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(startOpen) }
-    Section(title) {
-        BaseRow(if (open) "Свернуть" else "Развернуть", null, onClick = { open = !open })
-        if (open) content()
-    }
+fun Fold(title: String, startOpen: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    Section(title) { content() }
 }
 
 @Composable
 fun LookModules(a: ComposeActivity, s: Snap, fluentOn: Boolean) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    Themes.rev
-    UiNative.rev
-    val themeOn = Themes.activeId(ctx).isNotEmpty()
-    val soKey = UiNative.activeKey(ctx)
+    val themeRev = Themes.rev
+    val soRev = UiNative.rev
+    val themeId = remember(themeRev) { Themes.activeId(ctx) }
+    val themeOn = themeId.isNotEmpty()
+    val soKey = remember(soRev) { UiNative.activeKey(ctx) }
     Section("Модули оформления") {
         Text(
             "Каждый эффект включается и выключается отдельно. Выключенный модуль не тратит ресурсы.",
@@ -145,7 +142,7 @@ fun LookModules(a: ComposeActivity, s: Snap, fluentOn: Boolean) {
             if (it) a.set("tune.fluent", 0.0)
         }
         SwitchRow("Fluent", "Mica и плоские карточки", fluentOn, enabled = !s.glass) { a.set("tune.fluent", if (it) 1.0 else 0.0) }
-        SwitchRow("Тема-плагин", if (themeOn) "Активна: " + Themes.activeId(ctx) else "Не выбрана, ниже список", themeOn, enabled = themeOn) { if (!it) Themes.select(ctx, "") }
+        SwitchRow("Тема-плагин", if (themeOn) "Активна: " + themeId else "Не выбрана, ниже список", themeOn, enabled = themeOn) { if (!it) Themes.select(ctx, "") }
         SwitchRow("Интерфейс-плагин (.so)", if (soKey.isEmpty()) "Не выбран" else "Включён", soKey.isNotEmpty(), enabled = soKey.isNotEmpty()) { if (!it) UiNative.setActive(ctx, "") }
         SwitchRow("Своя картинка фона", null, s.glassBg != 0L, enabled = s.glassBg != 0L) { if (!it) a.call("clearGlassBg") }
         SwitchRow("Свой цвет фона", null, s.bgOn, enabled = !s.glass) { a.set("bgCustom", it) }
@@ -649,8 +646,8 @@ fun CatalogPicker(a: ComposeActivity, kind: String) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var stamp by remember { mutableStateOf(0) }
     var msg by remember { mutableStateOf("") }
-    Themes.rev
-    stamp
+    val themeRev = Themes.rev
+    val st = stamp
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (Store.items == null) {
             val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
@@ -659,14 +656,17 @@ fun CatalogPicker(a: ComposeActivity, kind: String) {
         }
     }
     val theme = kind == "theme"
+    val localAll = remember(st, themeRev) { Plugins.list(ctx) }
+    val enabledMap = remember(localAll) { localAll.associate { it.key to Plugins.enabled(ctx, it.key) } }
+    val themeIds = remember(themeRev) { Themes.list(ctx).map { it.id }.toSet() }
     val remote = Store.items?.filter { it.kind == kind } ?: emptyList()
-    val localIds = if (theme) Themes.list(ctx).map { it.id }.toSet() else Plugins.list(ctx).map { it.id }.toSet()
-    val localPlugins = Plugins.list(ctx).filter { "ui-native" !in it.kinds && "ui" !in it.kinds }
+    val localIds = if (theme) themeIds else localAll.map { it.id }.toSet()
+    val localPlugins = localAll.filter { "ui-native" !in it.kinds && "ui" !in it.kinds }
     Section(if (theme) "Каталог тем" else "Плагины подключения") {
         if (!theme) {
             if (localPlugins.isEmpty()) Text("Установленных плагинов нет. Скачайте из каталога ниже.", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodyMedium)
             localPlugins.forEach { p ->
-                val on = Plugins.enabled(ctx, p.key)
+                val on = enabledMap[p.key] ?: true
                 SwitchRow(p.name + "  " + p.version, p.manifest.optString("description").ifEmpty { null }, on) {
                     Plugins.setEnabled(ctx, p.key, it)
                     stamp++
@@ -712,10 +712,10 @@ fun CatalogPicker(a: ComposeActivity, kind: String) {
 @androidx.compose.runtime.Composable
 fun ThemePacks(a: ComposeActivity) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val packs = Themes.list(ctx)
-    val active = Themes.activeId(ctx)
+    val rev = Themes.rev
+    val packs = remember(rev) { Themes.list(ctx) }
+    val active = remember(rev) { Themes.activeId(ctx) }
     var msg by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
-    Themes.rev
     Section("Темы-плагины") {
         Text(
             "JSON-пакет с палитрой и настройками меняет оформление всего приложения. Формат описан в plugins/THEMES.md.",
@@ -787,9 +787,11 @@ fun StorePage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
     var stamp by remember { mutableStateOf(0) }
     var msg by remember { mutableStateOf("") }
     val items = Store.items
-    Themes.rev
-    UiNative.rev
-    stamp
+    val themeRev = Themes.rev
+    val soRev = UiNative.rev
+    val st = stamp
+    val haveMap = remember(st, themeRev, soRev, items) { items?.associate { it.id + ":" + it.kind to Store.installed(ctx, it) } ?: emptyMap() }
+    val localUi = remember(st, soRev) { UiNative.list(ctx) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (Store.items == null) {
             val e = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Store.load() }
@@ -821,7 +823,7 @@ fun StorePage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
             if (group.isEmpty()) continue
             Section(title) {
                 for (item in group) {
-                    val have = Store.installed(ctx, item)
+                    val have = haveMap[item.id + ":" + item.kind]
                     val upd = have != null && have != item.version
                     androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                         Text(item.name + "  " + item.version + if (have != null && !upd) "  ✓" else "", style = MaterialTheme.typography.bodyLarge)
@@ -837,7 +839,7 @@ fun StorePage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
                             }, enabled = Store.busy == null) { Text(if (have == null) "Установить" else if (upd) "Обновить до " + item.version else "Переустановить") }
                             if (have != null) TextButton({ Store.remove(ctx, item); stamp++ }) { Text("Удалить") }
                             if (kind == "ui" && have != null) {
-                                val key = UiNative.list(ctx).firstOrNull { p -> p.id == item.id }?.key
+                                val key = localUi.firstOrNull { p -> p.id == item.id }?.key
                                 if (key != null) TextButton({ UiNative.setActive(ctx, if (UiNative.activeKey(ctx) == key) "" else key) }) {
                                     Text(if (UiNative.activeKey(ctx) == key) "Выключить" else "Включить")
                                 }
@@ -847,7 +849,7 @@ fun StorePage(a: ComposeActivity, s: Snap, onBack: () -> Unit) {
                 }
             }
         }
-        val local = UiNative.list(ctx)
+        val local = localUi
         if (local.isNotEmpty()) Section("Установленные интерфейсы") {
             for (p in local) {
                 val on = UiNative.activeKey(ctx) == p.key

@@ -79,6 +79,9 @@ def d8_tools():
     return d8s[-1], jars[-1]
 
 
+FROZEN = ("tunn/client/Layer", "tunn/client/TunnApp")
+
+
 def changed_classes(old, new):
     out = []
     for d, _, fs in os.walk(new):
@@ -87,6 +90,8 @@ def changed_classes(old, new):
                 continue
             p = os.path.join(d, f)
             rel = os.path.relpath(p, new)
+            if rel.startswith(FROZEN):
+                continue
             o = os.path.join(old, rel)
             if not os.path.isfile(o) or open(o, "rb").read() != open(p, "rb").read():
                 out.append(p)
