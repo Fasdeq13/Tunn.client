@@ -57,3 +57,7 @@ for d in android/app/build/tmp/kotlin-classes/full* android/app/build/intermedia
 done
 
 python3 tools/pack.py fix --old-classes "$BASE" --new-classes "$NEW" --version "$VERSION" --serial "$SERIAL" --out dist
+<<<<<<< HEAD
+=======
+say "готово: dist/Tunn-$VERSION.$SERIAL.fix"
+>>>>>>> a4013480adaa6e599fd5308f49dac49e67c3e0a2
