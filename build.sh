@@ -160,7 +160,7 @@ build_android() {
         ks="$HOME/.fasdeq/release.jks"
         # shellcheck disable=SC1091
         . "$HOME/.fasdeq/ks.env"
-        kpass="$KS_PASS_SAVED"; kalias="tunn"
+        kpass="$KS_PASS_SAVED"; kalias="fasdeq"
       elif [ -f "$HOME/.android/debug.keystore" ]; then
         ks="$HOME/.android/debug.keystore"; kpass="android"; kalias="androiddebugkey"
       else

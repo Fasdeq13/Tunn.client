@@ -112,7 +112,7 @@ pub extern "system" fn Java_tunn_client_Native_journalAdd(mut env: JNIEnv, _: JC
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tunn_client_Native_journalRead(mut env: JNIEnv, _: JClass, lines: jint) -> jstring {
+pub extern "system" fn Java_tunn_client_Native_journalRead(env: JNIEnv, _: JClass, lines: jint) -> jstring {
     let s = tunn_backend::engine::journal_read(lines.max(1) as usize);
     env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
@@ -208,7 +208,7 @@ pub extern "system" fn Java_tunn_client_Native_uiRender(env: JNIEnv, _: JClass, 
 }
 
 #[no_mangle]
-pub extern "system" fn Java_tunn_client_Native_uiPoll(mut env: JNIEnv, _: JClass) -> jstring {
+pub extern "system" fn Java_tunn_client_Native_uiPoll(env: JNIEnv, _: JClass) -> jstring {
     let s = uihost::poll().unwrap_or_default();
     env.new_string(s).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
