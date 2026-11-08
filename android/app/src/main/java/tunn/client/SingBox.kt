@@ -77,6 +77,12 @@ object SingBox {
         val s = server(outbound)
         val stream = outbound.optJSONObject("streamSettings")
         val user = s.optJSONArray("users")?.optJSONObject(0) ?: JSONObject()
+        if (s.optString("address").isBlank() || s.optInt("port") !in 1..65535) {
+            throw IllegalStateException("У сервера нет адреса или порта")
+        }
+        if (protocol != "socks" && protocol != "tuic" && stream?.optString("network") == "h2" && stream.optString("security", "none") == "none") {
+            throw IllegalStateException("HTTP/2 без TLS не поддерживается sing-box")
+        }
         val o = JSONObject()
             .put("tag", "proxy")
             .put("server", s.optString("address"))

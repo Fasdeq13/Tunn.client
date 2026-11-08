@@ -343,8 +343,16 @@ class TunnService : VpnService() {
                         val port = DpiProxy.start(this)
                         config = Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
                     } else if (params.engine == CorePlugins.SINGBOX) {
-                        val port = startChild(if (params.core.isNotEmpty() && File(params.core).exists()) params.core else CorePlugins.singboxFile(this).absolutePath, outbound, true)
-                        config = Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
+                        var port = 0
+                        try {
+                            port = startChild(if (params.core.isNotEmpty() && File(params.core).exists()) params.core else CorePlugins.singboxFile(this).absolutePath, outbound, true)
+                        } catch (e: IllegalStateException) {
+                            killChild()
+                            if (outbound.optString("protocol") == "tuic" || !CorePlugins.fallback(this) || cancelled()) throw e
+                            J.w("svc", "sing-box не смог, перехожу на Xray: ${e.message}")
+                        }
+                        config = if (port > 0) Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
+                        else Links.buildConfig(outbound, params.mtu, params.tuning, rules)
                     } else if (params.core.isNotEmpty() && File(params.core).exists()) {
                         val port = startChild(params.core, outbound)
                         config = Links.buildConfig(Links.socksOutbound(port), params.mtu, params.tuning, rules)
